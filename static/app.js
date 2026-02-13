@@ -19,6 +19,8 @@ let realtimeReconnectTimer = null;
 let realtimeRefreshTimer = null;
 let realtimeRefreshInFlight = false;
 let realtimeRefreshPending = false;
+let realtimePingTimer = null;
+let realtimePollTimer = null;
 
 const chatListEl = document.getElementById("chatList");
 const feedEl = document.getElementById("feed");
@@ -753,6 +755,14 @@ function closeRealtimeSocket() {
     clearTimeout(realtimeRefreshTimer);
     realtimeRefreshTimer = null;
   }
+  if (realtimePingTimer !== null) {
+    clearInterval(realtimePingTimer);
+    realtimePingTimer = null;
+  }
+  if (realtimePollTimer !== null) {
+    clearInterval(realtimePollTimer);
+    realtimePollTimer = null;
+  }
   realtimeRefreshInFlight = false;
   realtimeRefreshPending = false;
 
@@ -797,11 +807,22 @@ function scheduleRealtimeRefresh() {
   }, 140);
 }
 
+function ensureRealtimePolling() {
+  if (!appState.authenticated) return;
+  if (realtimePollTimer !== null) return;
+
+  realtimePollTimer = setInterval(() => {
+    runRealtimeRefresh();
+  }, 4000);
+}
+
 function syncRealtimeConnection() {
   if (!appState.authenticated) {
     closeRealtimeSocket();
     return;
   }
+
+  ensureRealtimePolling();
 
   if (
     realtimeSocket &&
@@ -819,6 +840,16 @@ function syncRealtimeConnection() {
   const wsUrl = `${protocol}://${window.location.host}/ws/realtime`;
   realtimeSocket = new WebSocket(wsUrl);
 
+  realtimeSocket.onopen = () => {
+    if (realtimePingTimer !== null) {
+      clearInterval(realtimePingTimer);
+    }
+    realtimePingTimer = setInterval(() => {
+      if (!realtimeSocket || realtimeSocket.readyState !== WebSocket.OPEN) return;
+      realtimeSocket.send(JSON.stringify({ event: "ping" }));
+    }, 25000);
+  };
+
   realtimeSocket.onmessage = (event) => {
     let payload = {};
     try {
@@ -833,6 +864,10 @@ function syncRealtimeConnection() {
   };
 
   realtimeSocket.onclose = () => {
+    if (realtimePingTimer !== null) {
+      clearInterval(realtimePingTimer);
+      realtimePingTimer = null;
+    }
     realtimeSocket = null;
     if (!appState.authenticated) return;
     realtimeReconnectTimer = setTimeout(() => {
@@ -1207,6 +1242,13 @@ window.addEventListener("beforeunload", () => {
     wsEmit("call_leave");
   }
   closeRealtimeSocket();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && appState.authenticated) {
+    scheduleRealtimeRefresh();
+    syncRealtimeConnection();
+  }
 });
 
 searchInput.addEventListener("input", renderChannels);
