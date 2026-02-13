@@ -13,6 +13,7 @@ let localStream = null;
 let socket = null;
 let socketReadyPromise = null;
 let selfClientId = null;
+let callPingTimer = null;
 const peerConnections = new Map();
 let realtimeSocket = null;
 let realtimeReconnectTimer = null;
@@ -366,6 +367,10 @@ async function ensureSocket() {
   };
 
   socket.onclose = () => {
+    if (callPingTimer !== null) {
+      clearInterval(callPingTimer);
+      callPingTimer = null;
+    }
     socket = null;
     socketReadyPromise = null;
     selfClientId = null;
@@ -377,6 +382,12 @@ async function ensureSocket() {
 
   try {
     await socketReadyPromise;
+    if (callPingTimer !== null) {
+      clearInterval(callPingTimer);
+    }
+    callPingTimer = setInterval(() => {
+      wsEmit("ping");
+    }, 25000);
     return socket;
   } catch (error) {
     socket = null;
@@ -488,6 +499,10 @@ function removePeer(remoteSid) {
 async function closeCallModal() {
   if (socket && socket.readyState === WebSocket.OPEN && callRoom) {
     wsEmit("call_leave");
+  }
+  if (callPingTimer !== null) {
+    clearInterval(callPingTimer);
+    callPingTimer = null;
   }
   callRoom = null;
 

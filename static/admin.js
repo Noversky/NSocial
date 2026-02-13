@@ -96,7 +96,7 @@ function renderUsers(users) {
   usersBody.innerHTML = "";
 
   if (!users.length) {
-    usersBody.innerHTML = "<tr><td colspan='5'>Нет пользователей</td></tr>";
+    usersBody.innerHTML = "<tr><td colspan='6'>Нет пользователей</td></tr>";
     return;
   }
 
@@ -105,6 +105,7 @@ function renderUsers(users) {
     row.innerHTML = `
       <td>${user.id}</td>
       <td>${escapeHtml(user.name)} (@${escapeHtml(user.username)})</td>
+      <td>${escapeHtml(user.last_ip || "-")}</td>
       <td>${user.is_admin ? "admin" : "user"}</td>
       <td>${user.is_banned ? `BANNED (${escapeHtml(user.banned_reason || "без причины")})` : "active"}</td>
       <td>

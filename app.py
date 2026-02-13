@@ -96,6 +96,7 @@ def _ensure_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "users", "is_banned", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "users", "banned_reason", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "users", "banned_at", "TEXT")
+    _ensure_column(conn, "users", "last_ip", "TEXT NOT NULL DEFAULT ''")
 
     _ensure_column(conn, "channels", "category", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "channels", "cover_url", "TEXT NOT NULL DEFAULT ''")
@@ -146,6 +147,7 @@ def _init_db() -> None:
             is_banned INTEGER NOT NULL DEFAULT 0,
             banned_reason TEXT NOT NULL DEFAULT '',
             banned_at TEXT,
+            last_ip TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         );
 
@@ -501,11 +503,11 @@ def register() -> Any:
         """
         INSERT INTO users (
             name, username, password_hash, bio, avatar_url, status_text, location,
-            website, is_admin, is_banned, banned_reason, banned_at, created_at
+            website, is_admin, is_banned, banned_reason, banned_at, last_ip, created_at
         )
-        VALUES (?, ?, ?, '', '', '', '', '', 0, 0, '', NULL, ?)
+        VALUES (?, ?, ?, '', '', '', '', '', 0, 0, '', NULL, ?, ?)
         """,
-        (name, username, generate_password_hash(password), created_at),
+        (name, username, generate_password_hash(password), ip, created_at),
     )
     db.commit()
 
@@ -536,6 +538,8 @@ def login() -> Any:
         reason = row["banned_reason"] or "Без указания причины"
         return jsonify({"error": f"Аккаунт заблокирован: {reason}"}), 403
 
+    db.execute("UPDATE users SET last_ip = ? WHERE id = ?", (ip, row["id"]))
+    db.commit()
     session["user_id"] = int(row["id"])
     return jsonify({"ok": True})
 
@@ -936,7 +940,7 @@ def admin_state() -> Any:
     db = _db()
     users_rows = db.execute(
         """
-        SELECT id, name, username, is_admin, is_banned, banned_reason, created_at
+        SELECT id, name, username, is_admin, is_banned, banned_reason, last_ip, created_at
         FROM users
         ORDER BY created_at DESC, id DESC
         """
@@ -949,6 +953,7 @@ def admin_state() -> Any:
             "is_admin": bool(row["is_admin"]),
             "is_banned": bool(row["is_banned"]),
             "banned_reason": row["banned_reason"],
+            "last_ip": row["last_ip"],
             "created_at": row["created_at"],
         }
         for row in users_rows
@@ -1238,6 +1243,10 @@ def ws_call(ws: Any) -> None:
                     continue
 
                 _ws_send(to_client, {"event": "call_signal", "from": client_id, "signal": signal})
+                continue
+
+            if event == "ping":
+                _ws_send(client_id, {"event": "pong"})
                 continue
     finally:
         _leave_call(client_id, notify=True)
