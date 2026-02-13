@@ -1,0 +1,185 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NSocial</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <div class="bg-decor"></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">N</div>
+        <div>
+          <h1>NSocial</h1>
+          <p>social platform</p>
+        </div>
+      </div>
+
+      <form class="create-channel" id="createChannelForm">
+        <input id="channelNameInput" type="text" maxlength="60" placeholder="Название канала" required />
+        <input id="channelDescInput" type="text" maxlength="180" placeholder="Описание канала" />
+        <input id="channelCategoryInput" type="text" maxlength="40" placeholder="Категория (например, Tech)" />
+        <input id="channelCoverInput" type="url" maxlength="2048" placeholder="Обложка канала (URL)" />
+        <label class="check-row">
+          <input id="channelPrivateInput" type="checkbox" />
+          <span>Приватный канал</span>
+        </label>
+        <button type="submit">Создать канал</button>
+      </form>
+
+      <label class="search">
+        <input id="searchInput" type="text" placeholder="Поиск каналов" />
+      </label>
+
+      <nav class="chat-list" id="chatList"></nav>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <h2 id="activeChatTitle">Каналы NSocial</h2>
+          <p id="activeChatStatus">Войдите или зарегистрируйтесь, чтобы начать.</p>
+        </div>
+        <div class="top-actions">
+          <button type="button" id="audioCallBtn" class="ghost-btn">Аудио</button>
+          <button type="button" id="videoCallBtn" class="ghost-btn">Видео</button>
+          <button type="button" id="subscribeBtn" class="ghost-btn">Подписаться</button>
+          <button type="button" id="editChannelBtn" class="ghost-btn">Изменить канал</button>
+          <button type="button" id="deleteChannelBtn" class="danger-btn">Удалить канал</button>
+          <button type="button" id="mobileChannelsBtn" class="ghost-btn mobile-only">Каналы</button>
+          <button type="button" id="mobileProfileBtn" class="ghost-btn mobile-only">Профиль</button>
+        </div>
+      </header>
+
+      <section class="feed" id="feed"></section>
+
+      <form class="composer" id="composer">
+        <input id="composerInput" type="text" maxlength="1200" placeholder="Напишите пост в выбранный канал..." />
+        <button type="submit">Опубликовать</button>
+      </form>
+    </main>
+
+    <aside class="right-panel">
+      <section class="card auth-card" id="authCard">
+        <h3>Вход / Регистрация</h3>
+        <form id="loginForm" class="stack-form">
+          <input id="loginUsername" type="text" maxlength="30" placeholder="Username" required />
+          <input id="loginPassword" type="password" minlength="6" placeholder="Пароль" required />
+          <button type="submit">Войти</button>
+        </form>
+
+        <form id="registerForm" class="stack-form">
+          <input id="registerName" type="text" maxlength="60" placeholder="Имя" required />
+          <input id="registerUsername" type="text" maxlength="30" placeholder="Username" required />
+          <input id="registerPassword" type="password" minlength="6" placeholder="Пароль" required />
+          <button type="submit">Зарегистрироваться</button>
+        </form>
+      </section>
+
+      <section class="card profile-card" id="profileCard">
+        <div class="profile-header">
+          <h3>Профиль</h3>
+          <div class="top-actions">
+            <button type="button" id="adminPanelBtn" class="ghost-btn hidden">Админ-панель</button>
+            <button type="button" id="logoutBtn" class="danger-btn">Выйти</button>
+          </div>
+        </div>
+
+        <div class="profile-preview">
+          <img id="profileAvatarImage" class="avatar-img hidden" alt="avatar" />
+          <div id="profileAvatarFallback" class="avatar">N</div>
+          <div>
+            <strong id="profileNameView">User</strong>
+            <p id="profileUsernameView">@user</p>
+          </div>
+        </div>
+
+        <form id="profileForm" class="profile-form">
+          <input id="profileNameInput" type="text" maxlength="60" placeholder="Имя" required />
+          <input id="profileUsernameInput" type="text" maxlength="30" placeholder="Username (без @)" required />
+          <input id="profileStatusInput" type="text" maxlength="80" placeholder="Статус" />
+          <input id="profileLocationInput" type="text" maxlength="80" placeholder="Локация" />
+          <input id="profileWebsiteInput" type="url" maxlength="2048" placeholder="Сайт (URL)" />
+          <textarea id="profileBioInput" maxlength="280" placeholder="Описание"></textarea>
+          <input id="profileAvatarInput" type="url" maxlength="2048" placeholder="Ссылка на аватар (URL)" />
+          <label class="file-upload" for="profileAvatarFile">
+            <span class="file-upload-trigger">Выбрать файл</span>
+            <span id="avatarFileName" class="file-upload-name">Файл не выбран</span>
+          </label>
+          <input id="profileAvatarFile" class="file-upload-input" type="file" accept="image/*" />
+          <button type="submit">Сохранить профиль</button>
+        </form>
+      </section>
+    </aside>
+  </div>
+
+  <div id="editorModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3 id="editorTitle">Редактирование</h3>
+      <input id="editorNameInput" type="text" class="hidden" maxlength="60" />
+      <textarea id="editorTextInput" maxlength="1200" placeholder="Введите текст..."></textarea>
+      <div class="modal-actions">
+        <button id="editorCancelBtn" type="button" class="ghost-btn">Отмена</button>
+        <button id="editorSaveBtn" type="button">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="channelSettingsModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3>Настройки канала</h3>
+      <input id="channelSettingsNameInput" type="text" maxlength="60" placeholder="Название канала" />
+      <textarea id="channelSettingsDescInput" maxlength="180" placeholder="Описание канала"></textarea>
+      <input id="channelSettingsCategoryInput" type="text" maxlength="40" placeholder="Категория" />
+      <input id="channelSettingsCoverInput" type="url" maxlength="2048" placeholder="Обложка (URL)" />
+      <label class="check-row">
+        <input id="channelSettingsPrivateInput" type="checkbox" />
+        <span>Приватный канал</span>
+      </label>
+      <div class="modal-actions">
+        <button id="channelSettingsCancelBtn" type="button" class="ghost-btn">Отмена</button>
+        <button id="channelSettingsSaveBtn" type="button">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card modal-confirm">
+      <h3 id="confirmTitle">Подтверждение</h3>
+      <p id="confirmMessage">Вы уверены?</p>
+      <div class="modal-actions">
+        <button id="confirmCancelBtn" type="button" class="ghost-btn">Отмена</button>
+        <button id="confirmOkBtn" type="button" class="danger-btn">Удалить</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="callModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card call-modal">
+      <h3 id="callTitle">Звонок</h3>
+      <p id="callSubtitle">Подключение...</p>
+      <div class="call-stage">
+        <div class="call-local-wrap">
+          <video id="callLocalVideo" autoplay playsinline muted></video>
+          <div id="callLocalFallback" class="call-fallback">Ваше видео отключено</div>
+        </div>
+        <div id="callRemoteGrid" class="call-remote-grid"></div>
+      </div>
+      <div class="call-timer" id="callTimer">00:00</div>
+      <div class="call-actions">
+        <button type="button" id="callMuteBtn" class="ghost-btn">Микрофон: вкл</button>
+        <button type="button" id="callVideoToggleBtn" class="ghost-btn">Видео: вкл</button>
+        <button type="button" id="callEndBtn" class="danger-btn">Завершить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

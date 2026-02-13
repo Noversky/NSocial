@@ -1,0 +1,125 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NSocial Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <style>
+    body { font-family: Manrope, sans-serif; }
+    .admin-wrap { width: min(1120px, calc(100vw - 24px)); margin: 20px auto; display: grid; gap: 12px; }
+    .admin-card { background: #fff; border: 1px solid #dfe8f2; border-radius: 14px; padding: 14px; }
+    .admin-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+    .admin-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .admin-table { width: 100%; border-collapse: collapse; }
+    .admin-table th, .admin-table td { text-align: left; padding: 8px; border-bottom: 1px solid #edf2f7; font-size: 13px; vertical-align: top; }
+    .admin-actions { display: flex; gap: 8px; }
+    .admin-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+    .admin-form input, .admin-form button { border: 1px solid #d8e0e8; border-radius: 10px; padding: 10px; font-family: inherit; }
+    .admin-form button { border: 0; background: linear-gradient(135deg, #0f7aee, #16b2a5); color: #fff; font-weight: 700; }
+    .password-form { display: grid; gap: 8px; grid-template-columns: 1fr 1fr auto; }
+    .password-form input, .password-form button { border: 1px solid #d8e0e8; border-radius: 10px; padding: 10px; font-family: inherit; }
+    .password-form button { border: 0; background: linear-gradient(135deg, #0f7aee, #16b2a5); color: #fff; font-weight: 700; }
+    .log-cell { max-width: 360px; word-break: break-word; }
+    .status-line { margin: 6px 0 0; color: #5f6f85; font-size: 13px; }
+    @media (max-width: 960px) {
+      .admin-grid { grid-template-columns: 1fr; }
+      .password-form, .admin-form { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-wrap">
+    <section class="admin-card admin-head">
+      <div>
+        <h1 style="margin:0; font-size:22px;">NSocial Admin Panel</h1>
+        <p id="adminIdentity" class="status-line">Загрузка...</p>
+      </div>
+      <div class="admin-actions">
+        <a href="/" class="ghost-btn" style="text-decoration:none; display:inline-flex; align-items:center;">В NSocial</a>
+        <button id="refreshBtn" class="ghost-btn" type="button">Обновить</button>
+      </div>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin:0 0 10px; font-size:18px;">Смена пароля администратора</h2>
+      <form id="passwordForm" class="password-form">
+        <input id="currentPasswordInput" type="password" minlength="8" placeholder="Текущий пароль" required />
+        <input id="newPasswordInput" type="password" minlength="8" placeholder="Новый пароль" required />
+        <button type="submit">Сменить пароль</button>
+      </form>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin:0 0 10px; font-size:18px;">Пользователи</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Пользователь</th>
+            <th>Роль</th>
+            <th>Статус</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="usersBody"></tbody>
+      </table>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin:0 0 10px; font-size:18px;">IP Баны</h2>
+      <form id="ipBanForm" class="admin-form">
+        <input id="ipInput" type="text" placeholder="IP (пример: 127.0.0.1)" required />
+        <input id="ipReasonInput" type="text" maxlength="240" placeholder="Причина" />
+        <button type="submit">Забанить IP</button>
+      </form>
+
+      <table class="admin-table" style="margin-top:10px;">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>IP</th>
+            <th>Причина</th>
+            <th>Дата</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="ipBansBody"></tbody>
+      </table>
+    </section>
+
+    <section class="admin-card">
+      <h2 style="margin:0 0 10px; font-size:18px;">Журнал действий</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Дата</th>
+            <th>Админ</th>
+            <th>Действие</th>
+            <th>Цель</th>
+            <th>Детали</th>
+          </tr>
+        </thead>
+        <tbody id="logsBody"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <div id="confirmModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <h3 id="confirmTitle">Подтверждение</h3>
+      <p id="confirmMessage" class="status-line">Вы уверены?</p>
+      <input id="confirmReasonInput" class="hidden" type="text" maxlength="240" placeholder="Причина" />
+      <div class="modal-actions">
+        <button id="confirmCancelBtn" type="button" class="ghost-btn">Отмена</button>
+        <button id="confirmOkBtn" type="button" class="danger-btn">Подтвердить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='admin.js') }}"></script>
+</body>
+</html>
