@@ -52,6 +52,7 @@ const registerPassword = document.getElementById("registerPassword");
 
 const logoutBtn = document.getElementById("logoutBtn");
 const adminPanelBtn = document.getElementById("adminPanelBtn");
+const profileChannelsBtn = document.getElementById("profileChannelsBtn");
 
 const profileForm = document.getElementById("profileForm");
 const profileNameInput = document.getElementById("profileNameInput");
@@ -1015,6 +1016,7 @@ callEndBtn.addEventListener("click", async () => {
 
 mobileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
 mobileProfileBtn.addEventListener("click", () => toggleMobilePanel("right"));
+profileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
 
 channelSettingsCancelBtn.addEventListener("click", closeChannelSettings);
 channelSettingsSaveBtn.addEventListener("click", async () => {
