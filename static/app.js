@@ -14,6 +14,11 @@ let socket = null;
 let socketReadyPromise = null;
 let selfClientId = null;
 const peerConnections = new Map();
+let realtimeSocket = null;
+let realtimeReconnectTimer = null;
+let realtimeRefreshTimer = null;
+let realtimeRefreshInFlight = false;
+let realtimeRefreshPending = false;
 
 const chatListEl = document.getElementById("chatList");
 const feedEl = document.getElementById("feed");
@@ -571,6 +576,7 @@ function renderAuth() {
   channelPrivateInput.disabled = !isAuth;
 
   if (!isAuth) {
+    closeRealtimeSocket();
     if (!callModal.classList.contains("hidden")) {
       closeCallModal();
     }
@@ -585,6 +591,8 @@ function renderAuth() {
     audioCallBtn.disabled = true;
     videoCallBtn.disabled = true;
     adminPanelBtn.classList.add("hidden");
+  } else {
+    syncRealtimeConnection();
   }
 }
 
@@ -732,6 +740,108 @@ function fileToDataUrl(file) {
 async function refreshAndRender() {
   await loadState();
   render();
+  syncRealtimeConnection();
+}
+
+function closeRealtimeSocket() {
+  if (realtimeReconnectTimer !== null) {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = null;
+  }
+
+  if (realtimeRefreshTimer !== null) {
+    clearTimeout(realtimeRefreshTimer);
+    realtimeRefreshTimer = null;
+  }
+  realtimeRefreshInFlight = false;
+  realtimeRefreshPending = false;
+
+  if (realtimeSocket) {
+    realtimeSocket.onopen = null;
+    realtimeSocket.onmessage = null;
+    realtimeSocket.onclose = null;
+    realtimeSocket.onerror = null;
+    try {
+      realtimeSocket.close();
+    } catch {}
+    realtimeSocket = null;
+  }
+}
+
+async function runRealtimeRefresh() {
+  if (realtimeRefreshInFlight) {
+    realtimeRefreshPending = true;
+    return;
+  }
+
+  realtimeRefreshInFlight = true;
+  try {
+    await loadState();
+    render();
+  } catch {}
+  realtimeRefreshInFlight = false;
+
+  if (realtimeRefreshPending) {
+    realtimeRefreshPending = false;
+    scheduleRealtimeRefresh();
+  }
+}
+
+function scheduleRealtimeRefresh() {
+  if (!appState.authenticated) return;
+  if (realtimeRefreshTimer !== null) return;
+
+  realtimeRefreshTimer = setTimeout(() => {
+    realtimeRefreshTimer = null;
+    runRealtimeRefresh();
+  }, 140);
+}
+
+function syncRealtimeConnection() {
+  if (!appState.authenticated) {
+    closeRealtimeSocket();
+    return;
+  }
+
+  if (
+    realtimeSocket &&
+    (realtimeSocket.readyState === WebSocket.OPEN || realtimeSocket.readyState === WebSocket.CONNECTING)
+  ) {
+    return;
+  }
+
+  if (realtimeReconnectTimer !== null) {
+    clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = null;
+  }
+
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const wsUrl = `${protocol}://${window.location.host}/ws/realtime`;
+  realtimeSocket = new WebSocket(wsUrl);
+
+  realtimeSocket.onmessage = (event) => {
+    let payload = {};
+    try {
+      payload = JSON.parse(event.data);
+    } catch {
+      return;
+    }
+
+    if (payload?.event === "state_changed") {
+      scheduleRealtimeRefresh();
+    }
+  };
+
+  realtimeSocket.onclose = () => {
+    realtimeSocket = null;
+    if (!appState.authenticated) return;
+    realtimeReconnectTimer = setTimeout(() => {
+      realtimeReconnectTimer = null;
+      syncRealtimeConnection();
+    }, 1600);
+  };
+
+  realtimeSocket.onerror = () => {};
 }
 
 createChannelForm.addEventListener("submit", async (event) => {
@@ -1096,6 +1206,7 @@ window.addEventListener("beforeunload", () => {
   if (socket && socket.readyState === WebSocket.OPEN && callRoom) {
     wsEmit("call_leave");
   }
+  closeRealtimeSocket();
 });
 
 searchInput.addEventListener("input", renderChannels);
@@ -1111,6 +1222,7 @@ async function init() {
   try {
     await loadState();
     render();
+    syncRealtimeConnection();
   } catch (error) {
     activeChatStatus.textContent = error.message;
   }

@@ -31,6 +31,8 @@ CALL_PARTICIPANTS: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
 CLIENT_ROOM: dict[str, str] = {}
 CALL_CLIENTS: dict[str, Any] = {}
 CALL_LOCK = Lock()
+REALTIME_CLIENTS: dict[str, Any] = {}
+REALTIME_LOCK = Lock()
 
 
 def _now_iso() -> str:
@@ -333,6 +335,40 @@ def _ws_broadcast(room: str, payload: dict[str, Any], exclude: str | None = None
             _leave_call(client_id, notify=False)
 
 
+def _realtime_send(client_id: str, payload: dict[str, Any]) -> bool:
+    with REALTIME_LOCK:
+        ws = REALTIME_CLIENTS.get(client_id)
+    if ws is None:
+        return False
+    try:
+        ws.send(json.dumps(payload, ensure_ascii=False))
+        return True
+    except Exception:
+        return False
+
+
+def _realtime_broadcast(payload: dict[str, Any], exclude: str | None = None) -> None:
+    with REALTIME_LOCK:
+        targets = list(REALTIME_CLIENTS.keys())
+    for client_id in targets:
+        if exclude is not None and client_id == exclude:
+            continue
+        if not _realtime_send(client_id, payload):
+            with REALTIME_LOCK:
+                REALTIME_CLIENTS.pop(client_id, None)
+
+
+def _broadcast_state_changed(kind: str, channel_id: str = "") -> None:
+    _realtime_broadcast(
+        {
+            "event": "state_changed",
+            "kind": kind[:40],
+            "channel_id": channel_id[:80],
+            "at": _now_iso(),
+        }
+    )
+
+
 def _leave_call(client_id: str, notify: bool = True) -> None:
     with CALL_LOCK:
         room = CLIENT_ROOM.pop(client_id, None)
@@ -586,6 +622,7 @@ def update_profile() -> Any:
         (name, username, bio, avatar_url, status_text, location, website, user["id"]),
     )
     db.commit()
+    _broadcast_state_changed("profile_updated")
 
     return jsonify({"ok": True})
 
@@ -637,6 +674,7 @@ def create_channel() -> Any:
         (channel_id, user["id"]),
     )
     db.commit()
+    _broadcast_state_changed("channel_created", slug)
 
     return jsonify({"id": slug}), 201
 
@@ -671,6 +709,7 @@ def edit_channel(channel_slug: str) -> Any:
         (name, description, category, cover_url, is_private, channel["id"]),
     )
     db.commit()
+    _broadcast_state_changed("channel_updated", channel_slug)
     return jsonify({"ok": True})
 
 
@@ -691,6 +730,7 @@ def delete_channel(channel_slug: str) -> Any:
 
     db.execute("DELETE FROM channels WHERE id = ?", (channel["id"],))
     db.commit()
+    _broadcast_state_changed("channel_deleted", channel_slug)
     return jsonify({"ok": True})
 
 
@@ -716,6 +756,7 @@ def subscribe_channel(channel_slug: str) -> Any:
         (channel["id"], user_id),
     )
     db.commit()
+    _broadcast_state_changed("channel_subscribed", channel_slug)
     return jsonify({"ok": True})
 
 
@@ -747,6 +788,7 @@ def unsubscribe_channel(channel_slug: str) -> Any:
         (channel["id"], user_id),
     )
     db.commit()
+    _broadcast_state_changed("channel_unsubscribed", channel_slug)
     return jsonify({"ok": True})
 
 
@@ -781,6 +823,7 @@ def create_post(channel_slug: str) -> Any:
         (preview, now, channel["id"]),
     )
     db.commit()
+    _broadcast_state_changed("post_created", channel_slug)
 
     return jsonify({"ok": True}), 201
 
@@ -819,6 +862,7 @@ def edit_post(channel_slug: str, post_id: int) -> Any:
     )
     _rebuild_channel_preview(channel["id"])
     db.commit()
+    _broadcast_state_changed("post_updated", channel_slug)
     return jsonify({"ok": True})
 
 
@@ -848,7 +892,39 @@ def delete_post(channel_slug: str, post_id: int) -> Any:
     db.execute("DELETE FROM posts WHERE id = ?", (post_id,))
     _rebuild_channel_preview(channel["id"])
     db.commit()
+    _broadcast_state_changed("post_deleted", channel_slug)
     return jsonify({"ok": True})
+
+
+@sock.route("/ws/realtime")
+def ws_realtime(ws: Any) -> None:
+    user = _current_user()
+    if user is None:
+        ws.send(json.dumps({"event": "error", "message": "Требуется вход"}, ensure_ascii=False))
+        ws.close()
+        return
+
+    client_id = uuid.uuid4().hex
+    with REALTIME_LOCK:
+        REALTIME_CLIENTS[client_id] = ws
+    _realtime_send(client_id, {"event": "rt_ready", "client_id": client_id})
+
+    try:
+        while True:
+            raw = ws.receive()
+            if raw is None:
+                break
+
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+
+            if str(data.get("event", "")).strip() == "ping":
+                _realtime_send(client_id, {"event": "pong"})
+    finally:
+        with REALTIME_LOCK:
+            REALTIME_CLIENTS.pop(client_id, None)
 
 
 @app.get("/api/admin/state")
