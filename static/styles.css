@@ -8,6 +8,7 @@
   --accent-2: #16b2a5;
   --danger: #d63f57;
   --shadow: 0 18px 45px rgba(17, 36, 64, 0.12);
+  --viewport-h: 100vh;
 }
 
 * {
@@ -16,7 +17,7 @@
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: var(--viewport-h);
   font-family: "Manrope", sans-serif;
   color: var(--text-main);
   background: radial-gradient(circle at 8% 10%, #eaf6ff 0%, transparent 36%),
@@ -62,7 +63,7 @@ body {
 .main-area {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-height: calc(100vh - 48px);
+  min-height: calc(var(--viewport-h) - 48px);
 }
 
 .brand {
@@ -269,6 +270,12 @@ button:disabled {
 
 .mobile-only {
   display: none;
+}
+
+.mobile-sidebar-btn {
+  width: 100%;
+  margin-bottom: 10px;
+  justify-content: center;
 }
 
 .feed {
@@ -798,7 +805,21 @@ button:disabled {
   }
 
   .main-area {
-    min-height: 68vh;
+    min-height: calc(var(--viewport-h) - 20px);
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .feed {
+    padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: #ffffffef;
+    backdrop-filter: blur(8px);
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   }
 
   .topbar {

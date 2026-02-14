@@ -42,6 +42,7 @@ const audioCallBtn = document.getElementById("audioCallBtn");
 const videoCallBtn = document.getElementById("videoCallBtn");
 const mobileChannelsBtn = document.getElementById("mobileChannelsBtn");
 const mobileProfileBtn = document.getElementById("mobileProfileBtn");
+const mobileMessagesBtn = document.getElementById("mobileMessagesBtn");
 
 const createChannelForm = document.getElementById("createChannelForm");
 const channelNameInput = document.getElementById("channelNameInput");
@@ -1419,6 +1420,7 @@ callEndBtn.addEventListener("click", async () => {
 
 mobileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
 mobileProfileBtn.addEventListener("click", () => toggleMobilePanel("right"));
+mobileMessagesBtn?.addEventListener("click", () => toggleMobilePanel("none"));
 profileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
 
 channelSettingsCancelBtn.addEventListener("click", closeChannelSettings);
@@ -1511,6 +1513,29 @@ document.addEventListener("visibilitychange", () => {
 
 searchInput.addEventListener("input", renderChannels);
 
+function syncViewportHeight() {
+  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty("--viewport-h", `${Math.round(viewportHeight)}px`);
+}
+
+function setupTabletKeyboardFix() {
+  syncViewportHeight();
+  window.addEventListener("resize", syncViewportHeight);
+  window.addEventListener("orientationchange", syncViewportHeight);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncViewportHeight);
+    window.visualViewport.addEventListener("scroll", syncViewportHeight);
+  }
+
+  const keepComposerVisible = () => {
+    setTimeout(() => {
+      composer?.scrollIntoView({ block: "end", inline: "nearest" });
+    }, 120);
+  };
+  composerInput?.addEventListener("focus", keepComposerVisible);
+  composerFile?.addEventListener("focus", keepComposerVisible);
+}
+
 function render() {
   renderAuth();
   renderChannels();
@@ -1520,6 +1545,7 @@ function render() {
 
 async function init() {
   try {
+    setupTabletKeyboardFix();
     await loadState();
     render();
     syncRealtimeConnection();
