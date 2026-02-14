@@ -511,9 +511,50 @@ button:disabled {
 }
 
 .call-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 140px;
   color: #d0d8e8;
   padding: 14px;
   font-size: 13px;
+}
+
+.call-fallback-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e9f0ff;
+  text-align: center;
+}
+
+.call-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(208, 216, 232, 0.45);
+}
+
+.call-avatar-img,
+.call-avatar-fallback {
+  width: 100%;
+  height: 100%;
+}
+
+.call-avatar-img {
+  object-fit: cover;
+  display: block;
+}
+
+.call-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2f4466;
+  color: #f2f6ff;
+  font-weight: 800;
 }
 
 .call-remote-grid {
@@ -528,6 +569,11 @@ button:disabled {
   overflow: hidden;
   background: #0f1f33;
   min-height: 120px;
+  position: relative;
+}
+
+.call-remote-media {
+  position: relative;
 }
 
 .call-remote-video {
@@ -535,6 +581,17 @@ button:disabled {
   height: 120px;
   object-fit: cover;
   display: block;
+}
+
+.call-remote-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #0f1f33;
 }
 
 .call-remote-meta {

@@ -407,24 +407,102 @@ function renderLocalCallPreview() {
   callLocalFallback.classList.toggle("hidden", callVideoEnabled);
 }
 
-function createRemoteTile(sid, label) {
-  if (callRemoteGrid.querySelector(`[data-remote-sid="${sid}"]`)) return;
-  const tile = document.createElement("div");
-  tile.className = "call-remote-tile";
-  tile.dataset.remoteSid = sid;
+function callParticipantName(participant) {
+  if (participant?.name) return participant.name;
+  if (participant?.username) return `@${participant.username}`;
+  return "Участник";
+}
 
-  const video = document.createElement("video");
-  video.autoplay = true;
-  video.playsInline = true;
-  video.className = "call-remote-video";
+function buildCallAvatar(name, avatarUrl) {
+  const holder = document.createElement("div");
+  holder.className = "call-avatar";
 
-  const meta = document.createElement("div");
-  meta.className = "call-remote-meta";
-  meta.textContent = label || "Участник";
+  if (avatarUrl) {
+    const image = document.createElement("img");
+    image.className = "call-avatar-img";
+    image.src = avatarUrl;
+    image.alt = "avatar";
+    holder.appendChild(image);
+    return holder;
+  }
 
-  tile.appendChild(video);
-  tile.appendChild(meta);
-  callRemoteGrid.appendChild(tile);
+  const fallback = document.createElement("div");
+  fallback.className = "call-avatar-fallback";
+  fallback.textContent = initials(name);
+  holder.appendChild(fallback);
+  return holder;
+}
+
+function renderLocalCallFallback() {
+  const displayName = appState.profile?.name || "Вы";
+  const avatarUrl = appState.profile?.avatar_url || "";
+  callLocalFallback.innerHTML = "";
+  callLocalFallback.appendChild(buildCallAvatar(displayName, avatarUrl));
+
+  const name = document.createElement("div");
+  name.className = "call-fallback-name";
+  name.textContent = displayName;
+  callLocalFallback.appendChild(name);
+}
+
+function updateRemoteVideoState(sid) {
+  const tile = callRemoteGrid.querySelector(`[data-remote-sid="${sid}"]`);
+  if (!tile) return;
+  const video = tile.querySelector("video");
+  const fallback = tile.querySelector(".call-remote-fallback");
+  if (!video || !fallback) return;
+
+  const hasVideoTrack = Boolean(video.srcObject?.getVideoTracks().length);
+  fallback.classList.toggle("hidden", hasVideoTrack);
+}
+
+function upsertRemoteTile(sid, participant) {
+  let tile = callRemoteGrid.querySelector(`[data-remote-sid="${sid}"]`);
+  const displayName = callParticipantName(participant);
+  const metaLabel = participant?.username ? `@${participant.username}` : displayName;
+
+  if (!tile) {
+    tile = document.createElement("div");
+    tile.className = "call-remote-tile";
+    tile.dataset.remoteSid = sid;
+
+    const media = document.createElement("div");
+    media.className = "call-remote-media";
+
+    const video = document.createElement("video");
+    video.autoplay = true;
+    video.playsInline = true;
+    video.className = "call-remote-video";
+
+    const fallback = document.createElement("div");
+    fallback.className = "call-remote-fallback";
+
+    const meta = document.createElement("div");
+    meta.className = "call-remote-meta";
+
+    media.appendChild(video);
+    media.appendChild(fallback);
+    tile.appendChild(media);
+    tile.appendChild(meta);
+    callRemoteGrid.appendChild(tile);
+  }
+
+  const fallback = tile.querySelector(".call-remote-fallback");
+  const meta = tile.querySelector(".call-remote-meta");
+  if (fallback) {
+    fallback.innerHTML = "";
+    fallback.appendChild(buildCallAvatar(displayName, participant?.avatar_url || ""));
+
+    const name = document.createElement("div");
+    name.className = "call-fallback-name";
+    name.textContent = displayName;
+    fallback.appendChild(name);
+  }
+  if (meta) {
+    meta.textContent = metaLabel;
+  }
+
+  updateRemoteVideoState(sid);
 }
 
 function removeRemoteTile(sid) {
@@ -449,7 +527,7 @@ async function ensurePeerConnection(remoteSid, participant, initiate) {
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
-  createRemoteTile(remoteSid, participant?.username ? `@${participant.username}` : "Участник");
+  upsertRemoteTile(remoteSid, participant);
 
   pc.onicecandidate = (event) => {
     if (!event.candidate) return;
@@ -460,10 +538,11 @@ async function ensurePeerConnection(remoteSid, participant, initiate) {
   };
 
   pc.ontrack = (event) => {
-    createRemoteTile(remoteSid, participant?.username ? `@${participant.username}` : "Участник");
+    upsertRemoteTile(remoteSid, participant);
     const video = callRemoteGrid.querySelector(`[data-remote-sid="${remoteSid}"] video`);
     if (video && event.streams[0]) {
       video.srcObject = event.streams[0];
+      updateRemoteVideoState(remoteSid);
     }
   };
 
@@ -550,6 +629,7 @@ async function openCallModal(mode) {
 
   callTitle.textContent = callMode === "video" ? "Видеозвонок" : "Аудиозвонок";
   callSubtitle.textContent = `${channel.name} • подключение...`;
+  renderLocalCallFallback();
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({

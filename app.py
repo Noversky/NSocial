@@ -302,7 +302,7 @@ def _membership(channel_id: int, user_id: int) -> sqlite3.Row | None:
 
 def _user_by_id(user_id: int) -> sqlite3.Row | None:
     return _db().execute(
-        "SELECT id, name, username, is_banned FROM users WHERE id = ?",
+        "SELECT id, name, username, avatar_url, is_banned FROM users WHERE id = ?",
         (user_id,),
     ).fetchone()
 
@@ -1206,6 +1206,7 @@ def ws_call(ws: Any) -> None:
                     "user_id": int(user["id"]),
                     "name": user["name"],
                     "username": user["username"],
+                    "avatar_url": user["avatar_url"],
                     "mode": mode,
                 }
 
