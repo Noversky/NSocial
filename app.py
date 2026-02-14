@@ -25,7 +25,7 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "nsocial.db"
 UPLOAD_DIR = DATA_DIR / "uploads"
 
-app.config["MAX_CONTENT_LENGTH"] = 90 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 900 * 1024 * 1024
 
 DEFAULT_ADMIN_USERNAME = os.getenv("NSOCIAL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("NSOCIAL_ADMIN_PASSWORD", "admin12345")
@@ -276,7 +276,7 @@ with app.app_context():
 
 @app.errorhandler(413)
 def payload_too_large(_: Any) -> Any:
-    return jsonify({"error": "Файл слишком большой. Максимум 90 МБ"}), 413
+    return jsonify({"error": "Файл слишком большой. Максимум 900 МБ"}), 413
 
 
 @app.get("/uploads/<path:filename>")
