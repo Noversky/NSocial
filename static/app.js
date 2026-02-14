@@ -15,6 +15,7 @@ let socketReadyPromise = null;
 let selfClientId = null;
 let callPingTimer = null;
 const peerConnections = new Map();
+const peerMeta = new Map();
 let realtimeSocket = null;
 let realtimeReconnectTimer = null;
 let realtimeRefreshTimer = null;
@@ -349,10 +350,17 @@ async function ensureSocket() {
 
       const pc = await ensurePeerConnection(from, { client_id: from }, false);
       if (!pc) return;
+      const meta = peerMeta.get(from);
+      if (!meta) return;
 
       if (signal.description) {
+        const isOffer = signal.description.type === "offer";
+        const offerCollision = isOffer && (meta.makingOffer || pc.signalingState !== "stable");
+        meta.ignoreOffer = !meta.polite && offerCollision;
+        if (meta.ignoreOffer) return;
+
         await pc.setRemoteDescription(new RTCSessionDescription(signal.description));
-        if (signal.description.type === "offer") {
+        if (isOffer) {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           wsEmit("call_signal", { to: from, signal: { description: pc.localDescription } });
@@ -521,9 +529,18 @@ async function ensurePeerConnection(remoteSid, participant, initiate) {
   if (peerConnections.has(remoteSid)) return peerConnections.get(remoteSid);
 
   const pc = new RTCPeerConnection({
-    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+    ]
   });
   peerConnections.set(remoteSid, pc);
+  peerMeta.set(remoteSid, {
+    makingOffer: false,
+    ignoreOffer: false,
+    polite: Boolean(selfClientId && selfClientId < remoteSid),
+  });
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
@@ -553,12 +570,20 @@ async function ensurePeerConnection(remoteSid, participant, initiate) {
   };
 
   if (initiate) {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    wsEmit("call_signal", {
-      to: remoteSid,
-      signal: { description: pc.localDescription }
-    });
+    const meta = peerMeta.get(remoteSid);
+    if (meta) {
+      try {
+        meta.makingOffer = true;
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        wsEmit("call_signal", {
+          to: remoteSid,
+          signal: { description: pc.localDescription }
+        });
+      } finally {
+        meta.makingOffer = false;
+      }
+    }
   }
 
   return pc;
@@ -572,6 +597,7 @@ function removePeer(remoteSid) {
     pc.close();
     peerConnections.delete(remoteSid);
   }
+  peerMeta.delete(remoteSid);
   removeRemoteTile(remoteSid);
 }
 
