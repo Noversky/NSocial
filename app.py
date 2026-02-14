@@ -26,6 +26,11 @@ DB_PATH = DATA_DIR / "nsocial.db"
 DEFAULT_ADMIN_USERNAME = os.getenv("NSOCIAL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("NSOCIAL_ADMIN_PASSWORD", "admin12345")
 DEFAULT_ADMIN_NAME = os.getenv("NSOCIAL_ADMIN_NAME", "NSocial Admin")
+DEFAULT_ICE_SERVERS = [
+    {"urls": ["stun:stun.l.google.com:19302"]},
+    {"urls": ["stun:stun1.l.google.com:19302"]},
+    {"urls": ["stun:stun2.l.google.com:19302"]},
+]
 
 CALL_PARTICIPANTS: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
 CLIENT_ROOM: dict[str, str] = {}
@@ -37,6 +42,50 @@ REALTIME_LOCK = Lock()
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _load_ice_servers() -> list[dict[str, Any]]:
+    raw = os.getenv("NSOCIAL_ICE_SERVERS_JSON", "").strip()
+    if not raw:
+        return DEFAULT_ICE_SERVERS
+
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return DEFAULT_ICE_SERVERS
+
+    if not isinstance(parsed, list):
+        return DEFAULT_ICE_SERVERS
+
+    result: list[dict[str, Any]] = []
+    for item in parsed[:10]:
+        if not isinstance(item, dict):
+            continue
+        urls = item.get("urls")
+        username = item.get("username")
+        credential = item.get("credential")
+
+        if isinstance(urls, str):
+            urls_value: str | list[str] = urls[:500]
+        elif isinstance(urls, list):
+            urls_list = [str(x)[:500] for x in urls if str(x).strip()]
+            if not urls_list:
+                continue
+            urls_value = urls_list
+        else:
+            continue
+
+        normalized: dict[str, Any] = {"urls": urls_value}
+        if isinstance(username, str) and username.strip():
+            normalized["username"] = username[:200]
+        if isinstance(credential, str) and credential.strip():
+            normalized["credential"] = credential[:300]
+        result.append(normalized)
+
+    return result or DEFAULT_ICE_SERVERS
+
+
+ICE_SERVERS = _load_ice_servers()
 
 
 def _time_short(iso_value: str | None) -> str:
@@ -587,6 +636,14 @@ def get_state() -> Any:
             "channels": channels,
         }
     )
+
+
+@app.get("/api/call/config")
+def call_config() -> Any:
+    user = _current_user()
+    if user is None:
+        return jsonify({"error": "Требуется вход"}), 401
+    return jsonify({"ice_servers": ICE_SERVERS})
 
 
 @app.patch("/api/profile")

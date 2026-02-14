@@ -16,6 +16,7 @@ let selfClientId = null;
 let callPingTimer = null;
 const peerConnections = new Map();
 const peerMeta = new Map();
+let callIceServers = null;
 let realtimeSocket = null;
 let realtimeReconnectTimer = null;
 let realtimeRefreshTimer = null;
@@ -415,6 +416,27 @@ function renderLocalCallPreview() {
   callLocalFallback.classList.toggle("hidden", callVideoEnabled);
 }
 
+async function ensureCallConfig() {
+  if (Array.isArray(callIceServers) && callIceServers.length > 0) {
+    return callIceServers;
+  }
+
+  try {
+    const data = await api("/api/call/config", { method: "GET" });
+    if (Array.isArray(data?.ice_servers) && data.ice_servers.length > 0) {
+      callIceServers = data.ice_servers;
+      return callIceServers;
+    }
+  } catch {}
+
+  callIceServers = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+  ];
+  return callIceServers;
+}
+
 function callParticipantName(participant) {
   if (participant?.name) return participant.name;
   if (participant?.username) return `@${participant.username}`;
@@ -527,13 +549,10 @@ function removeRemoteTile(sid) {
 async function ensurePeerConnection(remoteSid, participant, initiate) {
   if (!localStream || !socket || socket.readyState !== WebSocket.OPEN) return null;
   if (peerConnections.has(remoteSid)) return peerConnections.get(remoteSid);
+  const iceServers = await ensureCallConfig();
 
   const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" },
-      { urls: "stun:stun1.l.google.com:19302" },
-      { urls: "stun:stun2.l.google.com:19302" },
-    ]
+    iceServers,
   });
   peerConnections.set(remoteSid, pc);
   peerMeta.set(remoteSid, {
