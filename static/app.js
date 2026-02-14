@@ -31,6 +31,8 @@ const activeChatTitle = document.getElementById("activeChatTitle");
 const activeChatStatus = document.getElementById("activeChatStatus");
 const composer = document.getElementById("composer");
 const composerInput = document.getElementById("composerInput");
+const composerFile = document.getElementById("composerFile");
+const composerFileName = document.getElementById("composerFileName");
 const searchInput = document.getElementById("searchInput");
 
 const subscribeBtn = document.getElementById("subscribeBtn");
@@ -157,6 +159,43 @@ function renderPostAvatar(name, avatarUrl) {
   return `<div class="chat-avatar chat-avatar-fallback">${initials(name)}</div>`;
 }
 
+function formatBytes(value) {
+  const size = Number(value || 0);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let index = 0;
+  let current = size;
+  while (current >= 1024 && index < units.length - 1) {
+    current /= 1024;
+    index += 1;
+  }
+  return `${current.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+function renderPostAttachment(post) {
+  if (!post?.attachment_url) return "";
+  const name = post.attachment_name || "Файл";
+  const type = post.attachment_type || "";
+  const size = formatBytes(post.attachment_size);
+  const meta = [name, size].filter(Boolean).join(" • ");
+
+  if (type.startsWith("image/")) {
+    return `
+      <div class="post-attachment">
+        <img src="${escapeHtml(post.attachment_url)}" alt="${escapeHtml(name)}" />
+        <div class="post-attachment-meta">${escapeHtml(meta)}</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="post-attachment post-attachment-file">
+      <a href="${escapeHtml(post.attachment_url)}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>
+      <span class="post-attachment-meta">${escapeHtml(meta)}</span>
+    </div>
+  `;
+}
+
 function activeChannel() {
   return appState.channels.find((channel) => channel.id === activeChannelId) || null;
 }
@@ -165,6 +204,31 @@ async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options
+  });
+
+  if (response.status === 204) return null;
+
+  let data = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const message = data?.error || "Ошибка запроса";
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  return data;
+}
+
+async function apiForm(path, formData) {
+  const response = await fetch(path, {
+    method: "POST",
+    body: formData
   });
 
   if (response.status === 204) return null;
@@ -573,6 +637,32 @@ async function ensurePeerConnection(remoteSid, participant, initiate) {
     });
   };
 
+  pc.onnegotiationneeded = async () => {
+    const meta = peerMeta.get(remoteSid);
+    if (!meta) return;
+    try {
+      meta.makingOffer = true;
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== "stable") return;
+      await pc.setLocalDescription(offer);
+      wsEmit("call_signal", {
+        to: remoteSid,
+        signal: { description: pc.localDescription }
+      });
+    } catch {
+    } finally {
+      meta.makingOffer = false;
+    }
+  };
+
+  pc.oniceconnectionstatechange = async () => {
+    if (pc.iceConnectionState === "failed") {
+      try {
+        pc.restartIce();
+      } catch {}
+    }
+  };
+
   pc.ontrack = (event) => {
     upsertRemoteTile(remoteSid, participant);
     const video = callRemoteGrid.querySelector(`[data-remote-sid="${remoteSid}"] video`);
@@ -727,6 +817,7 @@ function renderAuth() {
     feedEl.innerHTML = "<article class='empty-main'>Авторизуйтесь для доступа к каналам.</article>";
     chatListEl.innerHTML = "<article class='empty'>Требуется вход</article>";
     composerInput.disabled = true;
+    if (composerFile) composerFile.disabled = true;
     subscribeBtn.disabled = true;
     editChannelBtn.disabled = true;
     deleteChannelBtn.disabled = true;
@@ -807,6 +898,7 @@ function renderMain() {
     activeChatStatus.textContent = "Создайте канал слева, чтобы начать публикации.";
     feedEl.innerHTML = "<article class='empty-main'>Пока нет каналов и постов.</article>";
     composerInput.disabled = true;
+    if (composerFile) composerFile.disabled = true;
     return;
   }
 
@@ -815,6 +907,7 @@ function renderMain() {
   const category = channel.category ? ` • ${channel.category}` : "";
   activeChatStatus.textContent = `${channel.description || "Описание канала не задано"} • ${privateMark}${category} • роль: ${channel.my_role || "guest"}`;
   composerInput.disabled = !channel.can_post;
+  if (composerFile) composerFile.disabled = !channel.can_post;
 
   if (!channel.posts.length) {
     feedEl.innerHTML = "<article class='empty-main'>В этом канале еще нет постов.</article>";
@@ -828,12 +921,13 @@ function renderMain() {
     card.innerHTML = `
       <div class="post-head">
         ${renderPostAvatar(post.user, post.avatar_url)}
-        <div class="post-user">
+      <div class="post-user">
           <h5>${escapeHtml(post.user)}</h5>
           <span>${escapeHtml(post.handle)} • ${escapeHtml(post.sent_at || "")}${post.edited ? " • edited" : ""}</span>
         </div>
       </div>
-      <p>${escapeHtml(post.text)}</p>
+      ${post.text ? `<p>${escapeHtml(post.text)}</p>` : ""}
+      ${renderPostAttachment(post)}
       <div class="post-actions">
         ${post.can_edit ? `<button type="button" class="ghost-btn post-edit" data-post-id="${post.id}">Редактировать</button>` : ""}
         ${post.can_delete ? `<button type="button" class="danger-btn post-delete" data-post-id="${post.id}">Удалить</button>` : ""}
@@ -1053,14 +1147,24 @@ composer.addEventListener("submit", async (event) => {
   if (!channel || !channel.can_post) return;
 
   const text = composerInput.value.trim();
-  if (!text) return;
+  const file = composerFile?.files?.[0] || null;
+  if (!text && !file) return;
 
   try {
-    await api(`/api/channels/${channel.id}/posts`, {
-      method: "POST",
-      body: JSON.stringify({ text })
-    });
+    if (file) {
+      const formData = new FormData();
+      formData.append("text", text);
+      formData.append("file", file);
+      await apiForm(`/api/channels/${channel.id}/posts`, formData);
+    } else {
+      await api(`/api/channels/${channel.id}/posts`, {
+        method: "POST",
+        body: JSON.stringify({ text })
+      });
+    }
     composerInput.value = "";
+    if (composerFile) composerFile.value = "";
+    if (composerFileName) composerFileName.textContent = "Файл не выбран";
     await refreshAndRender();
   } catch (error) {
     showToast(error.message, "error");
@@ -1166,6 +1270,13 @@ feedEl.addEventListener("click", async (event) => {
 profileAvatarFile.addEventListener("change", () => {
   const file = profileAvatarFile.files?.[0];
   avatarFileName.textContent = file ? file.name : "Файл не выбран";
+});
+
+composerFile?.addEventListener("change", () => {
+  const file = composerFile.files?.[0];
+  if (composerFileName) {
+    composerFileName.textContent = file ? file.name : "Файл не выбран";
+  }
 });
 
 profileForm.addEventListener("submit", async (event) => {

@@ -11,9 +11,10 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from flask import Flask, g, jsonify, render_template, request, session
+from flask import Flask, g, jsonify, render_template, request, session, send_from_directory
 from flask_sock import Sock
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "nsocial-dev-secret-key-change-me"
@@ -22,6 +23,9 @@ sock = Sock(app)
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "nsocial.db"
+UPLOAD_DIR = DATA_DIR / "uploads"
+
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
 DEFAULT_ADMIN_USERNAME = os.getenv("NSOCIAL_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_PASSWORD = os.getenv("NSOCIAL_ADMIN_PASSWORD", "admin12345")
@@ -150,6 +154,10 @@ def _ensure_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "channels", "category", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "channels", "cover_url", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "channels", "is_private", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "posts", "attachment_name", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "posts", "attachment_url", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "posts", "attachment_type", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "posts", "attachment_size", "INTEGER NOT NULL DEFAULT 0")
 
     conn.commit()
 
@@ -230,6 +238,10 @@ def _init_db() -> None:
             text TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
+            attachment_name TEXT NOT NULL DEFAULT '',
+            attachment_url TEXT NOT NULL DEFAULT '',
+            attachment_type TEXT NOT NULL DEFAULT '',
+            attachment_size INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE,
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -260,6 +272,11 @@ def _init_db() -> None:
 
 with app.app_context():
     _init_db()
+
+
+@app.get("/uploads/<path:filename>")
+def uploaded_file(filename: str) -> Any:
+    return send_from_directory(UPLOAD_DIR, filename)
 
 
 def _normalize_username(value: str) -> str:
@@ -445,7 +462,10 @@ def _channel_payload(channel: sqlite3.Row, user_id: int) -> dict[str, Any]:
 
     posts_rows = db.execute(
         """
-        SELECT p.id, p.text, p.created_at, p.updated_at, u.id AS author_id, u.name, u.username, u.avatar_url
+        SELECT
+            p.id, p.text, p.created_at, p.updated_at,
+            p.attachment_name, p.attachment_url, p.attachment_type, p.attachment_size,
+            u.id AS author_id, u.name, u.username, u.avatar_url
         FROM posts p
         JOIN users u ON u.id = p.user_id
         WHERE p.channel_id = ?
@@ -464,6 +484,10 @@ def _channel_payload(channel: sqlite3.Row, user_id: int) -> dict[str, Any]:
                 "handle": f"@{row['username']}",
                 "avatar_url": row["avatar_url"],
                 "text": row["text"],
+                "attachment_name": row["attachment_name"],
+                "attachment_url": row["attachment_url"],
+                "attachment_type": row["attachment_type"],
+                "attachment_size": int(row["attachment_size"] or 0),
                 "sent_at": _time_short(row["created_at"]),
                 "edited": row["updated_at"] != row["created_at"],
                 "can_edit": bool(can_manage),
@@ -492,7 +516,13 @@ def _channel_payload(channel: sqlite3.Row, user_id: int) -> dict[str, Any]:
 def _rebuild_channel_preview(channel_id: int) -> None:
     db = _db()
     row = db.execute(
-        "SELECT text, created_at FROM posts WHERE channel_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+        """
+        SELECT text, attachment_name, created_at
+        FROM posts
+        WHERE channel_id = ?
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
         (channel_id,),
     ).fetchone()
     if row is None:
@@ -502,7 +532,8 @@ def _rebuild_channel_preview(channel_id: int) -> None:
         )
         return
 
-    preview = row["text"][:52] + ("..." if len(row["text"]) > 52 else "")
+    base = row["text"] or (f"Файл: {row['attachment_name']}" if row["attachment_name"] else "Файл")
+    preview = base[:52] + ("..." if len(base) > 52 else "")
     db.execute(
         "UPDATE channels SET preview = ?, updated_at = ? WHERE id = ?",
         (preview, row["created_at"], channel_id),
@@ -868,17 +899,59 @@ def create_post(channel_slug: str) -> Any:
     if membership is None:
         return jsonify({"error": "Подпишитесь на канал, чтобы публиковать посты"}), 403
 
-    data = request.get_json(silent=True) or {}
-    text = str(data.get("text", "")).strip()[:1200]
-    if not text:
-        return jsonify({"error": "Текст поста обязателен"}), 400
+    text = ""
+    attachment_name = ""
+    attachment_url = ""
+    attachment_type = ""
+    attachment_size = 0
+
+    if request.content_type and request.content_type.startswith("multipart/form-data"):
+        text = str(request.form.get("text", "")).strip()[:1200]
+        file = request.files.get("file")
+        if file and file.filename:
+            safe_name = secure_filename(file.filename)[:200]
+            ext = Path(safe_name).suffix[:10]
+            file_name = f"{uuid.uuid4().hex}{ext}"
+            UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            file_path = UPLOAD_DIR / file_name
+            file.save(file_path)
+            attachment_name = safe_name or "file"
+            attachment_url = f"/uploads/{file_name}"
+            attachment_type = str(file.mimetype or "")[:100]
+            try:
+                attachment_size = int(file_path.stat().st_size)
+            except OSError:
+                attachment_size = 0
+    else:
+        data = request.get_json(silent=True) or {}
+        text = str(data.get("text", "")).strip()[:1200]
+
+    if not text and not attachment_url:
+        return jsonify({"error": "Добавьте текст или файл"}), 400
 
     now = _now_iso()
     db.execute(
-        "INSERT INTO posts (channel_id, user_id, text, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (channel["id"], user["id"], text, now, now),
+        """
+        INSERT INTO posts (
+            channel_id, user_id, text, created_at, updated_at,
+            attachment_name, attachment_url, attachment_type, attachment_size
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            channel["id"],
+            user["id"],
+            text,
+            now,
+            now,
+            attachment_name,
+            attachment_url,
+            attachment_type,
+            attachment_size,
+        ),
     )
-    preview = text[:52] + ("..." if len(text) > 52 else "")
+    preview_base = text or (f"Файл: {attachment_name}" if attachment_name else "Файл")
+    preview = preview_base[:52] + ("..." if len(preview_base) > 52 else "")
     db.execute(
         "UPDATE channels SET preview = ?, updated_at = ? WHERE id = ?",
         (preview, now, channel["id"]),
@@ -901,7 +974,7 @@ def edit_post(channel_slug: str, post_id: int) -> Any:
         return jsonify({"error": "Канал не найден"}), 404
 
     post = db.execute(
-        "SELECT id, user_id FROM posts WHERE id = ? AND channel_id = ?",
+        "SELECT id, user_id, attachment_url FROM posts WHERE id = ? AND channel_id = ?",
         (post_id, channel["id"]),
     ).fetchone()
     if post is None:
@@ -914,7 +987,7 @@ def edit_post(channel_slug: str, post_id: int) -> Any:
 
     data = request.get_json(silent=True) or {}
     text = str(data.get("text", "")).strip()[:1200]
-    if not text:
+    if not text and not post["attachment_url"]:
         return jsonify({"error": "Текст поста обязателен"}), 400
 
     db.execute(

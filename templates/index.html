@@ -60,7 +60,14 @@
       <section class="feed" id="feed"></section>
 
       <form class="composer" id="composer">
-        <input id="composerInput" type="text" maxlength="1200" placeholder="Напишите пост в выбранный канал..." />
+        <div class="composer-field">
+          <input id="composerInput" type="text" maxlength="1200" placeholder="Напишите пост в выбранный канал..." />
+          <label class="composer-file" for="composerFile">
+            <span class="composer-file-trigger">Файл</span>
+            <span id="composerFileName" class="composer-file-name">Файл не выбран</span>
+          </label>
+          <input id="composerFile" class="composer-file-input" type="file" />
+        </div>
         <button type="submit">Опубликовать</button>
       </form>
     </main>

@@ -333,6 +333,45 @@ button:disabled {
   line-height: 1.5;
 }
 
+.post-attachment {
+  margin-top: 10px;
+  border: 1px solid #dfe9f3;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f6fbff;
+}
+
+.post-attachment img {
+  width: 100%;
+  max-height: 360px;
+  object-fit: cover;
+  display: block;
+}
+
+.post-attachment-file {
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.post-attachment-file a {
+  color: #0f2a4b;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.post-attachment-meta {
+  font-size: 12px;
+  color: var(--text-soft);
+  padding: 8px 10px;
+  border-top: 1px solid #dfe9f3;
+}
+
+.post-attachment-file .post-attachment-meta {
+  padding: 0;
+  border-top: 0;
+}
+
 .post-actions {
   margin-top: 10px;
   display: flex;
@@ -345,6 +384,39 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
+}
+
+.composer-field {
+  display: grid;
+  gap: 8px;
+}
+
+.composer-file {
+  border: 1px solid #d9e5f1;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: #f4f9ff;
+}
+
+.composer-file-trigger {
+  font-weight: 700;
+  color: #0f2a4b;
+}
+
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-file-input {
+  display: none;
 }
 
 .right-panel {
