@@ -178,11 +178,17 @@ function renderPostAttachment(post) {
   const type = post.attachment_type || "";
   const size = formatBytes(post.attachment_size);
   const meta = [name, size].filter(Boolean).join(" • ");
+  const safeUrl = escapeHtml(post.attachment_url);
+  const safeName = escapeHtml(name);
+  const downloadName = safeName.replaceAll('"', "");
 
   if (type.startsWith("image/")) {
     return `
       <div class="post-attachment">
-        <img src="${escapeHtml(post.attachment_url)}" alt="${escapeHtml(name)}" />
+        <a href="${safeUrl}" download="${downloadName}" class="post-attachment-image-link">
+          <img src="${safeUrl}" alt="${safeName}" />
+        </a>
+        <a class="post-attachment-download" href="${safeUrl}" download="${downloadName}">Скачать файл</a>
         <div class="post-attachment-meta">${escapeHtml(meta)}</div>
       </div>
     `;
@@ -190,7 +196,8 @@ function renderPostAttachment(post) {
 
   return `
     <div class="post-attachment post-attachment-file">
-      <a href="${escapeHtml(post.attachment_url)}" target="_blank" rel="noreferrer">${escapeHtml(name)}</a>
+      <a href="${safeUrl}" download="${downloadName}">${safeName}</a>
+      <a class="post-attachment-download" href="${safeUrl}" download="${downloadName}">Скачать файл</a>
       <span class="post-attachment-meta">${escapeHtml(meta)}</span>
     </div>
   `;
