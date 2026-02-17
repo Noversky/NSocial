@@ -101,6 +101,7 @@ body {
 .search input,
 .composer input,
 .create-channel input,
+.add-contact-form input,
 .profile-form input,
 .profile-form textarea,
 .create-channel button,
@@ -149,6 +150,7 @@ body {
 .search input:focus,
 .composer input:focus,
 .create-channel input:focus,
+.add-contact-form input:focus,
 .profile-form input:focus,
 .profile-form textarea:focus,
 .stack-form input:focus {
