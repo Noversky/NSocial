@@ -810,6 +810,52 @@ def call_config() -> Any:
     return jsonify({"ice_servers": ICE_SERVERS})
 
 
+@app.get("/api/users/search")
+def search_users() -> Any:
+    user = _current_user()
+    if user is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    raw_q = str(request.args.get("q", "")).strip()
+    q = _normalize_username(raw_q.lstrip("@"))
+    if len(q) < 2:
+        return jsonify({"items": []})
+
+    user_id = int(user["id"])
+    rows = _db().execute(
+        """
+        SELECT id, name, username, avatar_url
+        FROM users
+        WHERE id != ?
+          AND COALESCE(is_banned, 0) = 0
+          AND username LIKE ?
+        ORDER BY
+          CASE WHEN username = ? THEN 0 ELSE 1 END,
+          username COLLATE NOCASE ASC
+        LIMIT 20
+        """,
+        (user_id, f"{q}%", q),
+    ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        target_id = int(row["id"])
+        relation = _contact_by_users(user_id, target_id)
+        items.append(
+            {
+                "id": target_id,
+                "name": row["name"],
+                "username": row["username"],
+                "avatar_url": row["avatar_url"],
+                "is_contact": relation is not None,
+                "blocked_by_me": _is_contact_blocked(user_id, target_id),
+                "blocked_me": _is_contact_blocked(target_id, user_id),
+            }
+        )
+
+    return jsonify({"items": items})
+
+
 @app.patch("/api/profile")
 def update_profile() -> Any:
     user = _current_user()

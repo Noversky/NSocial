@@ -24,6 +24,7 @@ let realtimeRefreshInFlight = false;
 let realtimeRefreshPending = false;
 let realtimePingTimer = null;
 let realtimePollTimer = null;
+let userSearchTimer = null;
 
 const chatListEl = document.getElementById("chatList");
 const feedEl = document.getElementById("feed");
@@ -37,6 +38,7 @@ const searchInput = document.getElementById("searchInput");
 const contactListEl = document.getElementById("contactList");
 const addContactForm = document.getElementById("addContactForm");
 const addContactInput = document.getElementById("addContactInput");
+const userSearchListEl = document.getElementById("userSearchList");
 
 const subscribeBtn = document.getElementById("subscribeBtn");
 const editChannelBtn = document.getElementById("editChannelBtn");
@@ -855,6 +857,7 @@ function renderAuth() {
     feedEl.innerHTML = "<article class='empty-main'>Авторизуйтесь для доступа к каналам.</article>";
     chatListEl.innerHTML = "<article class='empty'>Требуется вход</article>";
     if (contactListEl) contactListEl.innerHTML = "<article class='empty'>Требуется вход</article>";
+    if (userSearchListEl) userSearchListEl.innerHTML = "";
     composerInput.disabled = true;
     if (composerFile) composerFile.disabled = true;
     subscribeBtn.disabled = true;
@@ -936,6 +939,47 @@ function renderContacts() {
 
     contactListEl.appendChild(item);
   });
+}
+
+function renderUserSearchResults(items) {
+  if (!userSearchListEl) return;
+  userSearchListEl.innerHTML = "";
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "user-search-item";
+    const status = item.is_contact
+      ? "Уже в контактах"
+      : (item.blocked_by_me ? "Заблокирован вами" : (item.blocked_me ? "Ограничил общение" : "Новый контакт"));
+    row.innerHTML = `
+      <div class="user-search-meta">
+        <strong>${escapeHtml(item.name)}</strong>
+        <span>@${escapeHtml(item.username)} • ${escapeHtml(status)}</span>
+      </div>
+      <button type="button" class="ghost-btn user-search-add" data-username="${escapeHtml(item.username)}" ${item.is_contact ? "disabled" : ""}>
+        ${item.is_contact ? "Добавлен" : "Добавить"}
+      </button>
+    `;
+    userSearchListEl.appendChild(row);
+  });
+}
+
+async function searchUsersByUsername() {
+  if (!addContactInput || !userSearchListEl || !appState.authenticated) return;
+  const raw = addContactInput.value.trim();
+  const q = raw.startsWith("@") ? raw.slice(1) : raw;
+  if (q.length < 2) {
+    userSearchListEl.innerHTML = "";
+    return;
+  }
+
+  try {
+    const data = await api(`/api/users/search?q=${encodeURIComponent(q)}`, { method: "GET" });
+    renderUserSearchResults(data.items || []);
+  } catch {
+    userSearchListEl.innerHTML = "";
+  }
 }
 
 function renderChannelActions(channel) {
@@ -1446,6 +1490,38 @@ addContactForm?.addEventListener("submit", async (event) => {
       body: JSON.stringify({ username })
     });
     if (addContactInput) addContactInput.value = "";
+    if (userSearchListEl) userSearchListEl.innerHTML = "";
+    await refreshAndRender();
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+});
+
+addContactInput?.addEventListener("input", () => {
+  if (userSearchTimer !== null) {
+    clearTimeout(userSearchTimer);
+    userSearchTimer = null;
+  }
+  userSearchTimer = setTimeout(() => {
+    userSearchTimer = null;
+    searchUsersByUsername();
+  }, 180);
+});
+
+userSearchListEl?.addEventListener("click", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (!target.classList.contains("user-search-add")) return;
+
+  const username = target.dataset.username || "";
+  if (!username) return;
+  try {
+    await api("/api/contacts", {
+      method: "POST",
+      body: JSON.stringify({ username })
+    });
+    if (addContactInput) addContactInput.value = "";
+    if (userSearchListEl) userSearchListEl.innerHTML = "";
     await refreshAndRender();
   } catch (error) {
     showToast(error.message, "error");
