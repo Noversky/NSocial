@@ -9,6 +9,7 @@
   --danger: #d63f57;
   --shadow: 0 18px 45px rgba(17, 36, 64, 0.12);
   --viewport-h: 100vh;
+  --keyboard-offset: 0px;
 }
 
 * {
@@ -815,7 +816,7 @@ button:disabled {
 
   .composer {
     position: sticky;
-    bottom: 0;
+    bottom: var(--keyboard-offset);
     z-index: 3;
     background: #ffffffef;
     backdrop-filter: blur(8px);
@@ -829,5 +830,19 @@ button:disabled {
 
   .top-actions {
     width: 100%;
+  }
+}
+
+/* iOS/iPadOS: keep text inputs >=16px to avoid viewport zoom on focus */
+@supports (-webkit-touch-callout: none) {
+  .search input,
+  .composer input,
+  .create-channel input,
+  .profile-form input,
+  .profile-form textarea,
+  .stack-form input,
+  .modal-card input,
+  .modal-card textarea {
+    font-size: 16px;
   }
 }

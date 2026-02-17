@@ -1514,8 +1514,14 @@ document.addEventListener("visibilitychange", () => {
 searchInput.addEventListener("input", renderChannels);
 
 function syncViewportHeight() {
-  const viewportHeight = window.visualViewport?.height || window.innerHeight;
+  const vv = window.visualViewport;
+  const viewportHeight = vv?.height || window.innerHeight;
   document.documentElement.style.setProperty("--viewport-h", `${Math.round(viewportHeight)}px`);
+
+  const keyboardDelta = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  const keyboardOffset = keyboardDelta > 120 ? keyboardDelta : 0;
+  document.documentElement.style.setProperty("--keyboard-offset", `${Math.round(keyboardOffset)}px`);
+  document.body.classList.toggle("keyboard-open", keyboardOffset > 0);
 }
 
 function setupTabletKeyboardFix() {
