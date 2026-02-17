@@ -199,6 +199,31 @@ button:disabled {
   gap: 8px;
 }
 
+.sidebar-title {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: var(--text-soft);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.contacts-section {
+  margin-top: 10px;
+}
+
+.add-contact-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .chat-item {
   border: 1px solid transparent;
   border-radius: 14px;

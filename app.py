@@ -154,10 +154,35 @@ def _ensure_migrations(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "channels", "category", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "channels", "cover_url", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "channels", "is_private", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "channels", "kind", "TEXT NOT NULL DEFAULT 'channel'")
     _ensure_column(conn, "posts", "attachment_name", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "posts", "attachment_url", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "posts", "attachment_type", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "posts", "attachment_size", "INTEGER NOT NULL DEFAULT 0")
+
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS contacts (
+            user_id INTEGER NOT NULL,
+            contact_user_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, contact_user_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(contact_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS contact_blocks (
+            user_id INTEGER NOT NULL,
+            blocked_user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, blocked_user_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """
+    )
 
     conn.commit()
 
@@ -218,6 +243,7 @@ def _init_db() -> None:
             category TEXT NOT NULL DEFAULT '',
             cover_url TEXT NOT NULL DEFAULT '',
             is_private INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL DEFAULT 'channel',
             updated_at TEXT NOT NULL,
             FOREIGN KEY(owner_user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -262,6 +288,26 @@ def _init_db() -> None:
             details TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL,
             FOREIGN KEY(actor_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS contacts (
+            user_id INTEGER NOT NULL,
+            contact_user_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, contact_user_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(contact_user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(channel_id) REFERENCES channels(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS contact_blocks (
+            user_id INTEGER NOT NULL,
+            blocked_user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(user_id, blocked_user_id),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """
     )
@@ -371,6 +417,56 @@ def _membership(channel_id: int, user_id: int) -> sqlite3.Row | None:
     ).fetchone()
 
 
+def _is_contact_blocked(user_id: int, blocked_user_id: int) -> bool:
+    row = _db().execute(
+        "SELECT 1 FROM contact_blocks WHERE user_id = ? AND blocked_user_id = ?",
+        (user_id, blocked_user_id),
+    ).fetchone()
+    return row is not None
+
+
+def _contact_by_users(user_id: int, contact_user_id: int) -> sqlite3.Row | None:
+    return _db().execute(
+        """
+        SELECT user_id, contact_user_id, channel_id
+        FROM contacts
+        WHERE user_id = ? AND contact_user_id = ?
+        """,
+        (user_id, contact_user_id),
+    ).fetchone()
+
+
+def _contact_payload(user_id: int, contact_user: sqlite3.Row, channel: sqlite3.Row) -> dict[str, Any]:
+    payload = _channel_payload(channel, user_id)
+    blocked_by_me = _is_contact_blocked(user_id, int(contact_user["id"]))
+    blocked_me = _is_contact_blocked(int(contact_user["id"]), user_id)
+    can_contact = not blocked_by_me and not blocked_me
+
+    payload.update(
+        {
+            "kind": "contact",
+            "name": contact_user["name"],
+            "description": f"@{contact_user['username']}",
+            "contact_user_id": int(contact_user["id"]),
+            "contact_username": contact_user["username"],
+            "contact_avatar_url": contact_user["avatar_url"],
+            "blocked_by_me": blocked_by_me,
+            "blocked_me": blocked_me,
+            "can_post": can_contact,
+            "can_call": can_contact,
+            "is_subscribed": True,
+            "my_role": "contact",
+            "can_edit_channel": False,
+            "can_delete_channel": False,
+        }
+    )
+    if blocked_by_me:
+        payload["preview"] = "Вы заблокировали контакт"
+    elif blocked_me:
+        payload["preview"] = "Контакт ограничил общение"
+    return payload
+
+
 def _user_by_id(user_id: int) -> sqlite3.Row | None:
     return _db().execute(
         "SELECT id, name, username, avatar_url, is_banned FROM users WHERE id = ?",
@@ -383,7 +479,19 @@ def _can_join_call(channel_slug: str, user_id: int) -> bool:
     if channel is None:
         return False
     membership = _membership(int(channel["id"]), user_id)
-    return membership is not None
+    if membership is None:
+        return False
+    if (channel["kind"] or "channel") == "contact":
+        other_row = _db().execute(
+            "SELECT contact_user_id FROM contacts WHERE user_id = ? AND channel_id = ?",
+            (user_id, channel["id"]),
+        ).fetchone()
+        if other_row is None:
+            return False
+        other_user_id = int(other_row["contact_user_id"])
+        if _is_contact_blocked(user_id, other_user_id) or _is_contact_blocked(other_user_id, user_id):
+            return False
+    return True
 
 
 def _ws_send(client_id: str, payload: dict[str, Any]) -> bool:
@@ -431,12 +539,14 @@ def _realtime_broadcast(payload: dict[str, Any], exclude: str | None = None) -> 
                 REALTIME_CLIENTS.pop(client_id, None)
 
 
-def _broadcast_state_changed(kind: str, channel_id: str = "") -> None:
+def _broadcast_state_changed(kind: str, channel_id: str = "", title: str = "", body: str = "") -> None:
     _realtime_broadcast(
         {
             "event": "state_changed",
             "kind": kind[:40],
             "channel_id": channel_id[:80],
+            "title": title[:120],
+            "body": body[:240],
             "at": _now_iso(),
         }
     )
@@ -502,6 +612,7 @@ def _channel_payload(channel: sqlite3.Row, user_id: int) -> dict[str, Any]:
 
     return {
         "id": channel["slug"],
+        "kind": channel["kind"] or "channel",
         "name": channel["name"],
         "description": channel["description"],
         "preview": channel["preview"],
@@ -648,13 +759,29 @@ def get_state() -> Any:
         FROM channels c
         LEFT JOIN channel_memberships cm
           ON cm.channel_id = c.id AND cm.user_id = ?
-        WHERE c.is_private = 0 OR cm.user_id IS NOT NULL
+        WHERE (c.is_private = 0 OR cm.user_id IS NOT NULL) AND c.kind = 'channel'
         ORDER BY c.updated_at DESC, c.id DESC
         """,
         (user_id,),
     ).fetchall()
 
     channels = [_channel_payload(row, user_id) for row in channels_rows]
+    contacts_rows = _db().execute(
+        """
+        SELECT c.contact_user_id, c.channel_id, u.name, u.username, u.avatar_url
+        FROM contacts c
+        JOIN users u ON u.id = c.contact_user_id
+        WHERE c.user_id = ? AND COALESCE(u.is_banned, 0) = 0
+        ORDER BY u.name COLLATE NOCASE ASC, u.id ASC
+        """,
+        (user_id,),
+    ).fetchall()
+    contacts: list[dict[str, Any]] = []
+    for row in contacts_rows:
+        channel = _db().execute("SELECT * FROM channels WHERE id = ?", (row["channel_id"],)).fetchone()
+        if channel is None:
+            continue
+        contacts.append(_contact_payload(user_id, row, channel))
     return jsonify(
         {
             "authenticated": True,
@@ -670,6 +797,7 @@ def get_state() -> Any:
                 "is_admin": bool(user["is_admin"]),
             },
             "channels": channels,
+            "contacts": contacts,
         }
     )
 
@@ -721,6 +849,147 @@ def update_profile() -> Any:
     db.commit()
     _broadcast_state_changed("profile_updated")
 
+    return jsonify({"ok": True})
+
+
+@app.post("/api/contacts")
+def add_contact() -> Any:
+    user = _current_user()
+    if user is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    data = request.get_json(silent=True) or {}
+    username = _normalize_username(str(data.get("username", "")))
+    if len(username) < 3:
+        return jsonify({"error": "Укажите username контакта"}), 400
+
+    db = _db()
+    target = db.execute(
+        "SELECT id, name, username FROM users WHERE username = ? AND COALESCE(is_banned, 0) = 0",
+        (username,),
+    ).fetchone()
+    if target is None:
+        return jsonify({"error": "Пользователь не найден"}), 404
+
+    user_id = int(user["id"])
+    target_user_id = int(target["id"])
+    if user_id == target_user_id:
+        return jsonify({"error": "Нельзя добавить себя в контакты"}), 400
+
+    exists = _contact_by_users(user_id, target_user_id)
+    if exists is not None:
+        return jsonify({"ok": True})
+    reverse = _contact_by_users(target_user_id, user_id)
+    if reverse is not None:
+        channel_row = db.execute("SELECT slug FROM channels WHERE id = ?", (int(reverse["channel_id"]),)).fetchone()
+        db.execute(
+            "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, target_user_id, int(reverse["channel_id"]), _now_iso()),
+        )
+        db.commit()
+        _broadcast_state_changed("contact_added")
+        return jsonify({"ok": True, "channel_id": (channel_row["slug"] if channel_row else "")}), 201
+
+    channel_slug = f"dm-{min(user_id, target_user_id)}-{max(user_id, target_user_id)}-{uuid.uuid4().hex[:8]}"
+    now = _now_iso()
+    cur = db.execute(
+        """
+        INSERT INTO channels (
+            slug, name, description, owner_user_id, preview, category, cover_url, is_private, kind, updated_at
+        )
+        VALUES (?, ?, '', ?, 'Чат создан', 'Контакт', '', 1, 'contact', ?)
+        """,
+        (channel_slug, f"DM {user['username']} - {target['username']}", user_id, now),
+    )
+    channel_id = int(cur.lastrowid)
+
+    db.execute(
+        "INSERT INTO channel_memberships (channel_id, user_id, role) VALUES (?, ?, 'subscriber')",
+        (channel_id, user_id),
+    )
+    db.execute(
+        "INSERT INTO channel_memberships (channel_id, user_id, role) VALUES (?, ?, 'subscriber')",
+        (channel_id, target_user_id),
+    )
+    db.execute(
+        "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+        (user_id, target_user_id, channel_id, now),
+    )
+    db.execute(
+        "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+        (target_user_id, user_id, channel_id, now),
+    )
+    db.commit()
+    _broadcast_state_changed("contact_added", channel_slug)
+    return jsonify({"ok": True, "channel_id": channel_slug}), 201
+
+
+@app.delete("/api/contacts/<int:contact_user_id>")
+def delete_contact(contact_user_id: int) -> Any:
+    user_id = _require_user_id()
+    if user_id is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    db = _db()
+    relation = _contact_by_users(user_id, contact_user_id)
+    if relation is None:
+        return jsonify({"ok": True})
+
+    channel_id = int(relation["channel_id"])
+    channel = db.execute("SELECT slug FROM channels WHERE id = ?", (channel_id,)).fetchone()
+    channel_slug = channel["slug"] if channel else ""
+
+    db.execute(
+        "DELETE FROM contacts WHERE (user_id = ? AND contact_user_id = ?) OR (user_id = ? AND contact_user_id = ?)",
+        (user_id, contact_user_id, contact_user_id, user_id),
+    )
+    db.execute(
+        "DELETE FROM contact_blocks WHERE (user_id = ? AND blocked_user_id = ?) OR (user_id = ? AND blocked_user_id = ?)",
+        (user_id, contact_user_id, contact_user_id, user_id),
+    )
+    db.execute("DELETE FROM channels WHERE id = ?", (channel_id,))
+    db.commit()
+    _broadcast_state_changed("contact_removed", channel_slug)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/contacts/<int:contact_user_id>/block")
+def block_contact(contact_user_id: int) -> Any:
+    user_id = _require_user_id()
+    if user_id is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    relation = _contact_by_users(user_id, contact_user_id)
+    if relation is None:
+        return jsonify({"error": "Контакт не найден"}), 404
+
+    db = _db()
+    db.execute(
+        """
+        INSERT INTO contact_blocks (user_id, blocked_user_id, created_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, blocked_user_id) DO NOTHING
+        """,
+        (user_id, contact_user_id, _now_iso()),
+    )
+    db.commit()
+    _broadcast_state_changed("contact_blocked")
+    return jsonify({"ok": True})
+
+
+@app.post("/api/contacts/<int:contact_user_id>/unblock")
+def unblock_contact(contact_user_id: int) -> Any:
+    user_id = _require_user_id()
+    if user_id is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    db = _db()
+    db.execute(
+        "DELETE FROM contact_blocks WHERE user_id = ? AND blocked_user_id = ?",
+        (user_id, contact_user_id),
+    )
+    db.commit()
+    _broadcast_state_changed("contact_unblocked")
     return jsonify({"ok": True})
 
 
@@ -903,6 +1172,18 @@ def create_post(channel_slug: str) -> Any:
     membership = _membership(channel["id"], int(user["id"]))
     if membership is None:
         return jsonify({"error": "Подпишитесь на канал, чтобы публиковать посты"}), 403
+    if (channel["kind"] or "channel") == "contact":
+        other = _db().execute(
+            "SELECT contact_user_id FROM contacts WHERE user_id = ? AND channel_id = ?",
+            (int(user["id"]), channel["id"]),
+        ).fetchone()
+        if other is None:
+            return jsonify({"error": "Контакт не найден"}), 404
+        other_user_id = int(other["contact_user_id"])
+        if _is_contact_blocked(int(user["id"]), other_user_id):
+            return jsonify({"error": "Вы заблокировали этот контакт"}), 403
+        if _is_contact_blocked(other_user_id, int(user["id"])):
+            return jsonify({"error": "Контакт ограничил сообщения для вас"}), 403
 
     text = ""
     attachment_name = ""
@@ -962,7 +1243,20 @@ def create_post(channel_slug: str) -> Any:
         (preview, now, channel["id"]),
     )
     db.commit()
-    _broadcast_state_changed("post_created", channel_slug)
+    if (channel["kind"] or "channel") == "contact":
+        _broadcast_state_changed(
+            "direct_message_created",
+            channel_slug,
+            title=f"Новое сообщение от {user['name']}",
+            body=(text[:140] if text else f"Файл: {attachment_name or 'вложение'}"),
+        )
+    else:
+        _broadcast_state_changed(
+            "post_created",
+            channel_slug,
+            title=f"Новый пост в {channel['name']}",
+            body=(text[:140] if text else f"Файл: {attachment_name or 'вложение'}"),
+        )
 
     return jsonify({"ok": True}), 201
 
@@ -1332,6 +1626,8 @@ def ws_call(ws: Any) -> None:
                 if not _can_join_call(channel_id, user_id):
                     _ws_send(client_id, {"event": "call_error", "message": "Нет доступа к звонку в этом канале"})
                     continue
+                room_channel = _channel_by_slug(channel_id)
+                room_name = room_channel["name"] if room_channel is not None else channel_id
 
                 _leave_call(client_id, notify=True)
                 room = f"call:{channel_id}"
@@ -1360,6 +1656,12 @@ def ws_call(ws: Any) -> None:
                     },
                 )
                 _ws_broadcast(room, {"event": "call_participant_joined", **participant}, exclude=client_id)
+                _broadcast_state_changed(
+                    "call_started",
+                    channel_id,
+                    title=f"{user['name']} звонит",
+                    body=f"Звонок в {room_name}",
+                )
                 continue
 
             if event == "call_leave":

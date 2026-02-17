@@ -1,4 +1,4 @@
-﻿let appState = { authenticated: false, profile: null, channels: [] };
+﻿let appState = { authenticated: false, profile: null, channels: [], contacts: [] };
 let activeChannelId = null;
 let modalSaveHandler = null;
 let channelSettingsSaveHandler = null;
@@ -34,6 +34,9 @@ const composerInput = document.getElementById("composerInput");
 const composerFile = document.getElementById("composerFile");
 const composerFileName = document.getElementById("composerFileName");
 const searchInput = document.getElementById("searchInput");
+const contactListEl = document.getElementById("contactList");
+const addContactForm = document.getElementById("addContactForm");
+const addContactInput = document.getElementById("addContactInput");
 
 const subscribeBtn = document.getElementById("subscribeBtn");
 const editChannelBtn = document.getElementById("editChannelBtn");
@@ -114,6 +117,7 @@ const callRemoteGrid = document.getElementById("callRemoteGrid");
 const callMuteBtn = document.getElementById("callMuteBtn");
 const callVideoToggleBtn = document.getElementById("callVideoToggleBtn");
 const callEndBtn = document.getElementById("callEndBtn");
+let notificationsEnabled = false;
 
 function escapeHtml(value) {
   return String(value)
@@ -205,7 +209,11 @@ function renderPostAttachment(post) {
 }
 
 function activeChannel() {
-  return appState.channels.find((channel) => channel.id === activeChannelId) || null;
+  return allRooms().find((channel) => channel.id === activeChannelId) || null;
+}
+
+function allRooms() {
+  return [...(appState.channels || []), ...(appState.contacts || [])];
 }
 
 async function api(path, options = {}) {
@@ -263,17 +271,21 @@ async function loadState() {
     appState = await api("/api/state", { method: "GET" });
   } catch (error) {
     if (error.status === 401) {
-      appState = { authenticated: false, profile: null, channels: [] };
+      appState = { authenticated: false, profile: null, channels: [], contacts: [] };
       activeChannelId = null;
       return;
     }
     throw error;
   }
 
-  if (appState.channels.length === 0) {
+  if (!Array.isArray(appState.contacts)) {
+    appState.contacts = [];
+  }
+
+  if (allRooms().length === 0) {
     activeChannelId = null;
   } else if (!activeChannelId || !activeChannel()) {
-    activeChannelId = appState.channels[0].id;
+    activeChannelId = allRooms()[0].id;
   }
 }
 
@@ -285,6 +297,19 @@ function filteredChannels() {
       channel.name.toLowerCase().includes(q) ||
       (channel.description || "").toLowerCase().includes(q) ||
       (channel.preview || "").toLowerCase().includes(q)
+    );
+  });
+}
+
+function filteredContacts() {
+  const q = searchInput.value.trim().toLowerCase();
+  if (!q) return appState.contacts || [];
+  return (appState.contacts || []).filter((contact) => {
+    return (
+      contact.name.toLowerCase().includes(q) ||
+      (contact.description || "").toLowerCase().includes(q) ||
+      (contact.contact_username || "").toLowerCase().includes(q) ||
+      (contact.preview || "").toLowerCase().includes(q)
     );
   });
 }
@@ -755,7 +780,7 @@ async function openCallModal(mode) {
     showToast("Выберите канал для звонка", "error");
     return;
   }
-  if (!channel.is_subscribed) {
+  if (!channel.is_subscribed || channel.can_call === false) {
     showToast("Подпишитесь на канал перед звонком", "error");
     return;
   }
@@ -814,6 +839,11 @@ function renderAuth() {
   channelCategoryInput.disabled = !isAuth;
   channelCoverInput.disabled = !isAuth;
   channelPrivateInput.disabled = !isAuth;
+  if (addContactInput) addContactInput.disabled = !isAuth;
+  if (addContactForm) {
+    const btn = addContactForm.querySelector("button");
+    if (btn) btn.disabled = !isAuth;
+  }
 
   if (!isAuth) {
     closeRealtimeSocket();
@@ -824,6 +854,7 @@ function renderAuth() {
     activeChatStatus.textContent = "Войдите или зарегистрируйтесь, чтобы продолжить.";
     feedEl.innerHTML = "<article class='empty-main'>Авторизуйтесь для доступа к каналам.</article>";
     chatListEl.innerHTML = "<article class='empty'>Требуется вход</article>";
+    if (contactListEl) contactListEl.innerHTML = "<article class='empty'>Требуется вход</article>";
     composerInput.disabled = true;
     if (composerFile) composerFile.disabled = true;
     subscribeBtn.disabled = true;
@@ -871,6 +902,42 @@ function renderChannels() {
   });
 }
 
+function renderContacts() {
+  if (!contactListEl) return;
+  contactListEl.innerHTML = "";
+  if (!appState.authenticated) return;
+
+  const contacts = filteredContacts();
+  if (contacts.length === 0) {
+    contactListEl.innerHTML = "<article class='empty'>Контактов пока нет</article>";
+    return;
+  }
+
+  contacts.forEach((contact) => {
+    const item = document.createElement("button");
+    item.className = `chat-item${contact.id === activeChannelId ? " active" : ""}`;
+    item.type = "button";
+    item.innerHTML = `
+      <div class="chat-avatar">${initials(contact.name)}</div>
+      <div class="chat-meta">
+        <h4>${escapeHtml(contact.name)}</h4>
+        <p>${escapeHtml(contact.preview || contact.description || "Личный чат")}</p>
+      </div>
+      <div class="chat-time">${contact.blocked_by_me ? "blocked" : "contact"}</div>
+    `;
+
+    item.addEventListener("click", () => {
+      activeChannelId = contact.id;
+      renderMain();
+      renderChannels();
+      renderContacts();
+      toggleMobilePanel("none");
+    });
+
+    contactListEl.appendChild(item);
+  });
+}
+
 function renderChannelActions(channel) {
   if (!channel) {
     subscribeBtn.disabled = true;
@@ -881,7 +948,21 @@ function renderChannelActions(channel) {
     return;
   }
 
+  if (channel.kind === "contact") {
+    subscribeBtn.disabled = false;
+    subscribeBtn.textContent = channel.blocked_by_me ? "Разблокировать" : "Блокировать";
+    editChannelBtn.disabled = false;
+    editChannelBtn.textContent = "Удалить контакт";
+    deleteChannelBtn.disabled = true;
+    deleteChannelBtn.textContent = "Удалить канал";
+    audioCallBtn.disabled = !channel.can_call;
+    videoCallBtn.disabled = !channel.can_call;
+    return;
+  }
+
   subscribeBtn.disabled = false;
+  editChannelBtn.textContent = "Изменить канал";
+  deleteChannelBtn.textContent = "Удалить канал";
   if (channel.is_subscribed) {
     subscribeBtn.textContent = channel.my_role === "admin" ? "Вы админ" : "Отписаться";
     subscribeBtn.disabled = channel.my_role === "admin";
@@ -911,11 +992,20 @@ function renderMain() {
   }
 
   activeChatTitle.textContent = channel.name;
+  if (channel.kind === "contact") {
+    const contactStatus = channel.blocked_by_me
+      ? "Вы заблокировали контакт"
+      : (channel.blocked_me ? "Контакт ограничил общение" : "Личный чат");
+    activeChatStatus.textContent = `${channel.description || ""} • ${contactStatus}`;
+    composerInput.disabled = !channel.can_post;
+    if (composerFile) composerFile.disabled = !channel.can_post;
+  } else {
   const privateMark = channel.is_private ? "приватный" : "публичный";
   const category = channel.category ? ` • ${channel.category}` : "";
   activeChatStatus.textContent = `${channel.description || "Описание канала не задано"} • ${privateMark}${category} • роль: ${channel.my_role || "guest"}`;
   composerInput.disabled = !channel.can_post;
   if (composerFile) composerFile.disabled = !channel.can_post;
+  }
 
   if (!channel.posts.length) {
     feedEl.innerHTML = "<article class='empty-main'>В этом канале еще нет постов.</article>";
@@ -1058,6 +1148,29 @@ function ensureRealtimePolling() {
   }, 4000);
 }
 
+async function ensureNotificationPermission() {
+  if (!("Notification" in window)) return false;
+  if (Notification.permission === "granted") {
+    notificationsEnabled = true;
+    return true;
+  }
+  if (Notification.permission === "denied") return false;
+  try {
+    const permission = await Notification.requestPermission();
+    notificationsEnabled = permission === "granted";
+    return notificationsEnabled;
+  } catch {
+    return false;
+  }
+}
+
+function pushLocalNotification(title, body = "") {
+  if (!notificationsEnabled || !("Notification" in window)) return;
+  try {
+    new Notification(title, { body });
+  } catch {}
+}
+
 function syncRealtimeConnection() {
   if (!appState.authenticated) {
     closeRealtimeSocket();
@@ -1101,6 +1214,16 @@ function syncRealtimeConnection() {
     }
 
     if (payload?.event === "state_changed") {
+      const kind = payload?.kind || "";
+      const fromAnotherRoom = payload?.channel_id && payload.channel_id !== activeChannelId;
+      if (document.hidden || fromAnotherRoom) {
+        if (kind === "direct_message_created" || kind === "post_created" || kind === "call_started") {
+          const title = payload?.title || "NSocial";
+          const body = payload?.body || "Новое событие";
+          showToast(`${title}: ${body}`, kind === "call_started" ? "success" : "error");
+          pushLocalNotification(title, body);
+        }
+      }
       scheduleRealtimeRefresh();
     }
   };
@@ -1184,6 +1307,15 @@ subscribeBtn.addEventListener("click", async () => {
   if (!channel) return;
 
   try {
+    if (channel.kind === "contact") {
+      const endpoint = channel.blocked_by_me
+        ? `/api/contacts/${channel.contact_user_id}/unblock`
+        : `/api/contacts/${channel.contact_user_id}/block`;
+      await api(endpoint, { method: "POST" });
+      await refreshAndRender();
+      return;
+    }
+
     if (channel.is_subscribed) {
       await api(`/api/channels/${channel.id}/unsubscribe`, { method: "POST" });
     } else {
@@ -1197,7 +1329,23 @@ subscribeBtn.addEventListener("click", async () => {
 
 editChannelBtn.addEventListener("click", () => {
   const channel = activeChannel();
-  if (!channel || !channel.can_edit_channel) return;
+  if (!channel) return;
+
+  if (channel.kind === "contact") {
+    openConfirmDialog({
+      title: "Удаление контакта",
+      message: `Удалить контакт ${channel.name}?`,
+      confirmLabel: "Удалить контакт",
+      onConfirm: async () => {
+        await api(`/api/contacts/${channel.contact_user_id}`, { method: "DELETE" });
+        activeChannelId = null;
+        await refreshAndRender();
+        closeConfirmDialog();
+      }
+    });
+    return;
+  }
+  if (!channel.can_edit_channel) return;
 
   openChannelSettings(channel, async () => {
       const name = channelSettingsNameInput.value.trim();
@@ -1284,6 +1432,23 @@ composerFile?.addEventListener("change", () => {
   const file = composerFile.files?.[0];
   if (composerFileName) {
     composerFileName.textContent = file ? file.name : "Файл не выбран";
+  }
+});
+
+addContactForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const raw = addContactInput?.value.trim() || "";
+  const username = raw.startsWith("@") ? raw.slice(1) : raw;
+  if (!username) return;
+  try {
+    await api("/api/contacts", {
+      method: "POST",
+      body: JSON.stringify({ username })
+    });
+    if (addContactInput) addContactInput.value = "";
+    await refreshAndRender();
+  } catch (error) {
+    showToast(error.message, "error");
   }
 });
 
@@ -1511,7 +1676,10 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-searchInput.addEventListener("input", renderChannels);
+searchInput.addEventListener("input", () => {
+  renderChannels();
+  renderContacts();
+});
 
 function syncViewportHeight() {
   const vv = window.visualViewport;
@@ -1545,6 +1713,7 @@ function setupTabletKeyboardFix() {
 function render() {
   renderAuth();
   renderChannels();
+  renderContacts();
   renderMain();
   renderProfile();
 }
@@ -1552,6 +1721,7 @@ function render() {
 async function init() {
   try {
     setupTabletKeyboardFix();
+    await ensureNotificationPermission();
     await loadState();
     render();
     syncRealtimeConnection();
@@ -1561,3 +1731,4 @@ async function init() {
 }
 
 init();
+

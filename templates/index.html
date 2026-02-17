@@ -35,10 +35,20 @@
       </form>
 
       <label class="search">
-        <input id="searchInput" type="text" placeholder="Поиск каналов" />
+        <input id="searchInput" type="text" placeholder="Поиск каналов и контактов" />
       </label>
 
+      <h3 class="sidebar-title">Каналы</h3>
       <nav class="chat-list" id="chatList"></nav>
+
+      <section class="contacts-section">
+        <h3 class="sidebar-title">Контакты</h3>
+        <form id="addContactForm" class="add-contact-form">
+          <input id="addContactInput" type="text" maxlength="30" placeholder="Добавить контакт по @username" />
+          <button type="submit" class="ghost-btn">Добавить</button>
+        </form>
+        <nav class="chat-list" id="contactList"></nav>
+      </section>
     </aside>
 
     <main class="main-area">
