@@ -1766,6 +1766,18 @@ function syncViewportHeight() {
   const keyboardOffset = keyboardDelta > 120 ? keyboardDelta : 0;
   document.documentElement.style.setProperty("--keyboard-offset", `${Math.round(keyboardOffset)}px`);
   document.body.classList.toggle("keyboard-open", keyboardOffset > 0);
+
+  const isIpad = /iPad/i.test(navigator.userAgent) || (
+    /Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1
+  );
+  if (isIpad && vv) {
+    const screenW = Math.max(window.screen.width || 0, window.screen.height || 0);
+    const viewportW = Math.max(vv.width || 0, vv.height || 0);
+    const multitask = screenW > 0 && viewportW < screenW * 0.9;
+    document.body.classList.toggle("ipad-multitask", multitask);
+  } else {
+    document.body.classList.remove("ipad-multitask");
+  }
 }
 
 function setupTabletKeyboardFix() {
@@ -1774,7 +1786,6 @@ function setupTabletKeyboardFix() {
   window.addEventListener("orientationchange", syncViewportHeight);
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncViewportHeight);
-    window.visualViewport.addEventListener("scroll", syncViewportHeight);
   }
 
   const keepComposerVisible = () => {

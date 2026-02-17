@@ -927,14 +927,27 @@ def add_contact() -> Any:
         return jsonify({"ok": True})
     reverse = _contact_by_users(target_user_id, user_id)
     if reverse is not None:
-        channel_row = db.execute("SELECT slug FROM channels WHERE id = ?", (int(reverse["channel_id"]),)).fetchone()
-        db.execute(
-            "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, target_user_id, int(reverse["channel_id"]), _now_iso()),
-        )
-        db.commit()
-        _broadcast_state_changed("contact_added")
-        return jsonify({"ok": True, "channel_id": (channel_row["slug"] if channel_row else "")}), 201
+        channel_id = int(reverse["channel_id"])
+        channel_row = db.execute("SELECT id, slug FROM channels WHERE id = ?", (channel_id,)).fetchone()
+        if channel_row is not None:
+            try:
+                db.execute(
+                    "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+                    (user_id, target_user_id, channel_id, _now_iso()),
+                )
+                db.commit()
+                _broadcast_state_changed("contact_added", channel_row["slug"])
+                return jsonify({"ok": True, "channel_id": channel_row["slug"]}), 201
+            except sqlite3.IntegrityError:
+                db.rollback()
+                return jsonify({"ok": True, "channel_id": channel_row["slug"]})
+        else:
+            # stale reverse mapping without channel; cleanup and continue with fresh DM creation
+            db.execute(
+                "DELETE FROM contacts WHERE user_id = ? AND contact_user_id = ?",
+                (target_user_id, user_id),
+            )
+            db.commit()
 
     channel_slug = f"dm-{min(user_id, target_user_id)}-{max(user_id, target_user_id)}-{uuid.uuid4().hex[:8]}"
     now = _now_iso()
@@ -957,14 +970,22 @@ def add_contact() -> Any:
         "INSERT INTO channel_memberships (channel_id, user_id, role) VALUES (?, ?, 'subscriber')",
         (channel_id, target_user_id),
     )
-    db.execute(
-        "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
-        (user_id, target_user_id, channel_id, now),
-    )
-    db.execute(
-        "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
-        (target_user_id, user_id, channel_id, now),
-    )
+    try:
+        db.execute(
+            "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, target_user_id, channel_id, now),
+        )
+        db.execute(
+            "INSERT INTO contacts (user_id, contact_user_id, channel_id, created_at) VALUES (?, ?, ?, ?)",
+            (target_user_id, user_id, channel_id, now),
+        )
+    except sqlite3.IntegrityError:
+        db.rollback()
+        existing = _contact_by_users(user_id, target_user_id)
+        if existing is not None:
+            row = db.execute("SELECT slug FROM channels WHERE id = ?", (int(existing["channel_id"]),)).fetchone()
+            return jsonify({"ok": True, "channel_id": (row["slug"] if row else "")})
+        return jsonify({"error": "Не удалось добавить контакт, попробуйте ещё раз"}), 409
     db.commit()
     _broadcast_state_changed("contact_added", channel_slug)
     return jsonify({"ok": True, "channel_id": channel_slug}), 201

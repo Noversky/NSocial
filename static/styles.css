@@ -887,6 +887,17 @@ button:disabled {
   .top-actions {
     width: 100%;
   }
+
+  body.ipad-multitask .composer {
+    position: static;
+    bottom: 0;
+    backdrop-filter: none;
+    padding-bottom: 18px;
+  }
+
+  body.ipad-multitask .feed {
+    padding-bottom: 20px;
+  }
 }
 
 /* iOS/iPadOS: keep text inputs >=16px to avoid viewport zoom on focus */
