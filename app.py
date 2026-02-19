@@ -330,6 +330,16 @@ def uploaded_file(filename: str) -> Any:
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+@app.get("/manifest.json")
+def web_manifest() -> Any:
+    return send_from_directory(BASE_DIR / "static", "manifest.json")
+
+
+@app.get("/sw.js")
+def service_worker() -> Any:
+    return send_from_directory(BASE_DIR / "static", "sw.js")
+
+
 def _normalize_username(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_]+", "", value.strip().lower())[:30]
 

@@ -1797,6 +1797,13 @@ function setupTabletKeyboardFix() {
   composerFile?.addEventListener("focus", keepComposerVisible);
 }
 
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator)) return;
+  try {
+    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  } catch {}
+}
+
 function render() {
   renderAuth();
   renderChannels();
@@ -1808,6 +1815,7 @@ function render() {
 async function init() {
   try {
     setupTabletKeyboardFix();
+    registerServiceWorker();
     await ensureNotificationPermission();
     await loadState();
     render();
