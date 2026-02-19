@@ -4,7 +4,8 @@ const CORE_ASSETS = [
   "/static/styles.css",
   "/static/app.js",
   "/static/manifest.json",
-  "/static/nsocial-icon.svg"
+  "/static/nsocial-icon.svg",
+  "/static/offline.html"
 ];
 
 self.addEventListener("install", (event) => {
@@ -34,13 +35,20 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;
-      return fetch(req).then((res) => {
-        const copy = res.clone();
-        if (res.ok && CORE_ASSETS.includes(url.pathname)) {
-          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
-        }
-        return res;
-      });
+      return fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          if (res.ok && CORE_ASSETS.includes(url.pathname)) {
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => {
+          if (req.mode === "navigate") {
+            return caches.match("/static/offline.html");
+          }
+          return cached;
+        });
     })
   );
 });

@@ -3,3 +3,4 @@ flask-sock>=0.7.0,<1.0.0
 gunicorn>=21.2.0,<22.0.0
 gevent>=24.2.1,<25.0.0
 gevent-websocket>=0.10.1,<1.0.0
+apns2>=0.7.2,<1.0.0

@@ -1,0 +1,14 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732" role="img" aria-label="NSocial Splash">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020" />
+      <stop offset="1" stop-color="#0f172a" />
+    </linearGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#bg)" />
+  <g transform="translate(506 506)">
+    <rect width="1720" height="1720" rx="360" fill="#111827" />
+    <circle cx="1360" cy="360" r="190" fill="#38bdf8" />
+    <path d="M520 1360V420h220l520 650V420h220v940h-220l-520-650v650H520z" fill="#f8fafc" />
+  </g>
+</svg>

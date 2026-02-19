@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import os
+import base64
 import re
 import sqlite3
 import json
@@ -35,6 +36,12 @@ DEFAULT_ICE_SERVERS = [
     {"urls": ["stun:stun1.l.google.com:19302"]},
     {"urls": ["stun:stun2.l.google.com:19302"]},
 ]
+APNS_KEY_ID = os.getenv("NSOCIAL_APNS_KEY_ID", "").strip()
+APNS_TEAM_ID = os.getenv("NSOCIAL_APNS_TEAM_ID", "").strip()
+APNS_BUNDLE_ID = os.getenv("NSOCIAL_APNS_BUNDLE_ID", "").strip()
+APNS_KEY_PATH = os.getenv("NSOCIAL_APNS_KEY_PATH", "").strip()
+APNS_KEY_BASE64 = os.getenv("NSOCIAL_APNS_KEY_BASE64", "").strip()
+APNS_USE_SANDBOX = os.getenv("NSOCIAL_APNS_USE_SANDBOX", "true").strip().lower() not in {"0", "false", "no"}
 
 CALL_PARTICIPANTS: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
 CLIENT_ROOM: dict[str, str] = {}
@@ -42,6 +49,8 @@ CALL_CLIENTS: dict[str, Any] = {}
 CALL_LOCK = Lock()
 REALTIME_CLIENTS: dict[str, Any] = {}
 REALTIME_LOCK = Lock()
+_APNS_CLIENT: Any | None = None
+_APNS_READY = False
 
 
 def _now_iso() -> str:
@@ -107,6 +116,94 @@ def _slugify(value: str) -> str:
     if slug:
         return slug
     return f"channel-{int(datetime.now().timestamp())}"
+
+
+def _get_apns_key_path() -> str | None:
+    if APNS_KEY_PATH:
+        return APNS_KEY_PATH
+    if not APNS_KEY_BASE64:
+        return None
+    try:
+        key_bytes = base64.b64decode(APNS_KEY_BASE64.encode("utf-8"), validate=True)
+    except Exception:
+        return None
+    key_path = DATA_DIR / "apns_authkey.p8"
+    try:
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        key_path.write_bytes(key_bytes)
+    except Exception:
+        return None
+    return str(key_path)
+
+
+def _get_apns_client() -> Any | None:
+    global _APNS_CLIENT, _APNS_READY
+    if _APNS_READY:
+        return _APNS_CLIENT
+    _APNS_READY = True
+
+    if not (APNS_KEY_ID and APNS_TEAM_ID and APNS_BUNDLE_ID):
+        return None
+
+    try:
+        from apns2.client import APNsClient
+        from apns2.credentials import TokenCredentials
+    except Exception:
+        return None
+
+    key_path = _get_apns_key_path()
+    if not key_path:
+        return None
+
+    try:
+        credentials = TokenCredentials(
+            auth_key_path=key_path,
+            auth_key_id=APNS_KEY_ID,
+            team_id=APNS_TEAM_ID,
+        )
+        _APNS_CLIENT = APNsClient(credentials=credentials, use_sandbox=APNS_USE_SANDBOX)
+    except Exception:
+        _APNS_CLIENT = None
+    return _APNS_CLIENT
+
+
+def _send_apns(tokens: list[str], title: str, body: str, data: dict[str, Any] | None = None) -> None:
+    if not tokens:
+        return
+    client = _get_apns_client()
+    if client is None:
+        return
+    try:
+        from apns2.payload import Payload
+    except Exception:
+        return
+
+    payload = Payload(alert={"title": title[:120], "body": body[:240]}, sound="default", badge=1, custom=data or {})
+    for token in tokens:
+        try:
+            client.send_notification(token, payload, topic=APNS_BUNDLE_ID)
+        except Exception:
+            continue
+
+
+def _notify_push_users(user_ids: list[int], title: str, body: str, channel_slug: str) -> None:
+    if not user_ids:
+        return
+    db = _db()
+    unique_ids = sorted({int(uid) for uid in user_ids if int(uid) > 0})
+    if not unique_ids:
+        return
+    placeholders = ",".join(["?"] * len(unique_ids))
+    rows = db.execute(
+        f"""
+        SELECT token
+        FROM push_tokens
+        WHERE platform = 'ios' AND user_id IN ({placeholders})
+        """,
+        tuple(unique_ids),
+    ).fetchall()
+    tokens = [row["token"] for row in rows if row["token"]]
+    _send_apns(tokens, title, body, data={"channel": channel_slug})
 
 
 def _client_ip() -> str:
@@ -180,6 +277,17 @@ def _ensure_migrations(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(user_id, blocked_user_id),
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS push_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            token TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(platform, token),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """
     )
@@ -309,6 +417,17 @@ def _init_db() -> None:
             FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY(blocked_user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS push_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            platform TEXT NOT NULL,
+            token TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(platform, token),
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
         """
     )
     _ensure_migrations(conn)
@@ -338,6 +457,36 @@ def web_manifest() -> Any:
 @app.get("/sw.js")
 def service_worker() -> Any:
     return send_from_directory(BASE_DIR / "static", "sw.js")
+
+
+@app.post("/api/push/register")
+def register_push_token() -> Any:
+    user = _current_user()
+    if user is None:
+        return jsonify({"error": "Требуется вход"}), 401
+
+    data = request.get_json(silent=True) or {}
+    platform = str(data.get("platform", "")).strip().lower()
+    token = str(data.get("token", "")).strip()
+
+    if platform not in {"ios", "android"}:
+        return jsonify({"error": "Неверная платформа"}), 400
+    if len(token) < 16:
+        return jsonify({"error": "Некорректный токен"}), 400
+
+    now = _now_iso()
+    db = _db()
+    db.execute(
+        """
+        INSERT INTO push_tokens (user_id, platform, token, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(platform, token)
+        DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at
+        """,
+        (int(user["id"]), platform, token, now, now),
+    )
+    db.commit()
+    return jsonify({"ok": True})
 
 
 def _normalize_username(value: str) -> str:
@@ -1253,6 +1402,7 @@ def create_post(channel_slug: str) -> Any:
     membership = _membership(channel["id"], int(user["id"]))
     if membership is None:
         return jsonify({"error": "Подпишитесь на канал, чтобы публиковать посты"}), 403
+    other_user_id: int | None = None
     if (channel["kind"] or "channel") == "contact":
         other = _db().execute(
             "SELECT contact_user_id FROM contacts WHERE user_id = ? AND channel_id = ?",
@@ -1331,12 +1481,30 @@ def create_post(channel_slug: str) -> Any:
             title=f"Новое сообщение от {user['name']}",
             body=(text[:140] if text else f"Файл: {attachment_name or 'вложение'}"),
         )
+        if other_user_id is not None:
+            _notify_push_users(
+                [other_user_id],
+                title=f"Новое сообщение от {user['name']}",
+                body=(text[:160] if text else f"Файл: {attachment_name or 'вложение'}"),
+                channel_slug=channel_slug,
+            )
     else:
         _broadcast_state_changed(
             "post_created",
             channel_slug,
             title=f"Новый пост в {channel['name']}",
             body=(text[:140] if text else f"Файл: {attachment_name or 'вложение'}"),
+        )
+        member_rows = db.execute(
+            "SELECT user_id FROM channel_memberships WHERE channel_id = ? AND user_id != ?",
+            (channel["id"], int(user["id"])),
+        ).fetchall()
+        member_ids = [int(row["user_id"]) for row in member_rows]
+        _notify_push_users(
+            member_ids,
+            title=f"Новый пост в {channel['name']}",
+            body=(text[:160] if text else f"Файл: {attachment_name or 'вложение'}"),
+            channel_slug=channel_slug,
         )
 
     return jsonify({"ok": True}), 201

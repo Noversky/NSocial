@@ -25,6 +25,8 @@ let realtimeRefreshPending = false;
 let realtimePingTimer = null;
 let realtimePollTimer = null;
 let userSearchTimer = null;
+let nativePushReady = false;
+let pendingNativeToken = null;
 
 const chatListEl = document.getElementById("chatList");
 const feedEl = document.getElementById("feed");
@@ -867,6 +869,17 @@ function renderAuth() {
     videoCallBtn.disabled = true;
     adminPanelBtn.classList.add("hidden");
   } else {
+    setupNativePush();
+    if (pendingNativeToken) {
+      const cap = window.Capacitor;
+      const platform = cap && typeof cap.getPlatform === "function" ? cap.getPlatform() : "ios";
+      api("/api/push/register", {
+        method: "POST",
+        body: JSON.stringify({ platform, token: pendingNativeToken })
+      }).then(() => {
+        pendingNativeToken = null;
+      }).catch(() => {});
+    }
     syncRealtimeConnection();
   }
 }
@@ -1212,6 +1225,44 @@ function pushLocalNotification(title, body = "") {
   if (!notificationsEnabled || !("Notification" in window)) return;
   try {
     new Notification(title, { body });
+  } catch {}
+}
+
+async function setupNativePush() {
+  if (nativePushReady) return;
+  const cap = window.Capacitor;
+  if (!cap || !cap.Plugins) return;
+  if (typeof cap.isNativePlatform === "function" && !cap.isNativePlatform()) return;
+
+  const PushNotifications = cap.Plugins.PushNotifications;
+  if (!PushNotifications) return;
+
+  nativePushReady = true;
+  try {
+    const permission = await PushNotifications.requestPermissions();
+    if (permission?.receive !== "granted") return;
+    await PushNotifications.register();
+
+    PushNotifications.addListener("registration", async (token) => {
+      const value = token?.value || token;
+      if (!value) return;
+      pendingNativeToken = value;
+      if (!appState.authenticated) return;
+      const platform = typeof cap.getPlatform === "function" ? cap.getPlatform() : "ios";
+      try {
+        await api("/api/push/register", {
+          method: "POST",
+          body: JSON.stringify({ platform, token: value })
+        });
+        pendingNativeToken = null;
+      } catch {}
+    });
+
+    PushNotifications.addListener("pushNotificationReceived", (notification) => {
+      const title = notification?.title || "NSocial";
+      const body = notification?.body || "";
+      showToast(`${title}${body ? `: ${body}` : ""}`, "success");
+    });
   } catch {}
 }
 
