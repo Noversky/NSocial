@@ -47,9 +47,6 @@ const editChannelBtn = document.getElementById("editChannelBtn");
 const deleteChannelBtn = document.getElementById("deleteChannelBtn");
 const audioCallBtn = document.getElementById("audioCallBtn");
 const videoCallBtn = document.getElementById("videoCallBtn");
-const mobileChannelsBtn = document.getElementById("mobileChannelsBtn");
-const mobileProfileBtn = document.getElementById("mobileProfileBtn");
-const mobileMessagesBtn = document.getElementById("mobileMessagesBtn");
 
 const createChannelForm = document.getElementById("createChannelForm");
 const channelNameInput = document.getElementById("channelNameInput");
@@ -1710,9 +1707,6 @@ callEndBtn.addEventListener("click", async () => {
   showToast("Звонок завершен", "success");
 });
 
-mobileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
-mobileProfileBtn.addEventListener("click", () => toggleMobilePanel("right"));
-mobileMessagesBtn?.addEventListener("click", () => toggleMobilePanel("none"));
 profileChannelsBtn.addEventListener("click", () => toggleMobilePanel("sidebar"));
 
 channelSettingsCancelBtn.addEventListener("click", closeChannelSettings);
@@ -1863,6 +1857,63 @@ function render() {
   renderProfile();
 }
 
+// ===== Theme Toggle =====
+function initThemeToggle() {
+  const themeToggle = document.getElementById("themeToggle");
+  const savedTheme = localStorage.getItem("appTheme") || "light";
+  document.documentElement.setAttribute("data-theme", savedTheme);
+  updateThemeToggleIcon(savedTheme);
+
+  themeToggle.addEventListener("click", () => {
+    const currentTheme = document.documentElement.getAttribute("data-theme");
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("appTheme", newTheme);
+    updateThemeToggleIcon(newTheme);
+  });
+}
+
+function updateThemeToggleIcon(theme) {
+  const themeToggle = document.getElementById("themeToggle");
+  themeToggle.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
+// ===== Mobile Bottom Tabs =====
+function initMobileBottomTabs() {
+  const shell = document.querySelector(".app-shell");
+  const tabButtons = document.querySelectorAll(".mobile-tab");
+  const sidebar = document.querySelector(".sidebar");
+  const mainArea = document.querySelector(".main-area");
+  const rightPanel = document.querySelector(".right-panel");
+
+  function showPanel(panelName) {
+    shell.classList.remove("show-sidebar", "show-right-panel");
+    
+    switch(panelName) {
+      case "chat":
+        shell.classList.remove("show-sidebar", "show-right-panel");
+        break;
+      case "channels":
+      case "contacts":
+        shell.classList.add("show-sidebar");
+        break;
+      case "profile":
+        shell.classList.add("show-right-panel");
+        break;
+    }
+    
+    tabButtons.forEach(btn => btn.classList.remove("active"));
+    document.querySelector(`[data-tab="${panelName}"]`)?.classList.add("active");
+  }
+
+  tabButtons.forEach(button => {
+    button.addEventListener("click", () => {
+      const tabName = button.getAttribute("data-tab");
+      showPanel(tabName);
+    });
+  });
+}
+
 async function init() {
   try {
     setupTabletKeyboardFix();
@@ -1871,10 +1922,13 @@ async function init() {
     await loadState();
     render();
     syncRealtimeConnection();
+    initThemeToggle();
+    initMobileBottomTabs();
   } catch (error) {
     activeChatStatus.textContent = error.message;
   }
 }
 
 init();
+
 

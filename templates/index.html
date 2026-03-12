@@ -27,8 +27,6 @@
           <p>social platform</p>
         </div>
       </div>
-      <button type="button" id="mobileMessagesBtn" class="ghost-btn mobile-only mobile-sidebar-btn">Сообщения</button>
-
       <form class="create-channel" id="createChannelForm">
         <input id="channelNameInput" type="text" maxlength="60" placeholder="Название канала" required />
         <input id="channelDescInput" type="text" maxlength="180" placeholder="Описание канала" />
@@ -71,15 +69,7 @@
           <button type="button" id="subscribeBtn" class="ghost-btn">Подписаться</button>
           <button type="button" id="editChannelBtn" class="ghost-btn">Изменить канал</button>
           <button type="button" id="deleteChannelBtn" class="danger-btn">Удалить канал</button>
-          <button type="button" id="mobileChannelsBtn" class="ghost-btn mobile-only">Каналы</button>
-          <button type="button" id="mobileProfileBtn" class="ghost-btn mobile-only">Профиль</button>
-        </div>
-      </header>
 
-      <section class="feed" id="feed"></section>
-
-      <form class="composer" id="composer">
-        <div class="composer-field">
           <input id="composerInput" type="text" maxlength="1200" placeholder="Напишите пост в выбранный канал..." />
           <label class="composer-file" for="composerFile">
             <span class="composer-file-trigger">Файл</span>
@@ -206,6 +196,33 @@
       </div>
     </div>
   </div>
+
+  <div id="uiToastContainer" class="ui-toast-container"></div>
+
+  <!-- Mobile Bottom Navigation Tabs -->
+  <nav class="mobile-bottom-tabs">
+    <div class="mobile-tabs-container">
+      <button class="mobile-tab active" data-tab="chat" id="tabChat">
+        <span class="mobile-tab-icon">💬</span>
+        <span class="mobile-tab-label">Чаты</span>
+      </button>
+      <button class="mobile-tab" data-tab="channels" id="tabChannels">
+        <span class="mobile-tab-icon">📢</span>
+        <span class="mobile-tab-label">Каналы</span>
+      </button>
+      <button class="mobile-tab" data-tab="contacts" id="tabContacts">
+        <span class="mobile-tab-icon">👥</span>
+        <span class="mobile-tab-label">Контакты</span>
+      </button>
+      <button class="mobile-tab" data-tab="profile" id="tabProfile">
+        <span class="mobile-tab-icon">👤</span>
+        <span class="mobile-tab-label">Профиль</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Theme Toggle Button -->
+  <button class="theme-toggle" id="themeToggle" title="Переключить тему">🌙</button>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

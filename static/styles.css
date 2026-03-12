@@ -12,6 +12,16 @@
   --keyboard-offset: 0px;
 }
 
+/* Dark theme */
+[data-theme="dark"] {
+  --bg-1: #1a1a2e;
+  --bg-2: #16213e;
+  --line: #2d3561;
+  --text-main: #e8e8f0;
+  --text-soft: #a0a0b0;
+  --shadow: 0 18px 45px rgba(0, 0, 0, 0.4);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -24,6 +34,11 @@ body {
   background: radial-gradient(circle at 8% 10%, #eaf6ff 0%, transparent 36%),
               radial-gradient(circle at 92% 8%, #dff8f2 0%, transparent 32%),
               linear-gradient(165deg, #eef3f7 0%, #f6f9fc 45%, #edf2f6 100%);
+  transition: background 0.3s ease;
+}
+
+[data-theme="dark"] body {
+  background: linear-gradient(165deg, #0f1419 0%, #1a1f26 45%, #131820 100%);
 }
 
 .bg-decor {
@@ -836,7 +851,7 @@ button:disabled {
   }
 
   .mobile-only {
-    display: inline-flex;
+    display: none !important;
   }
 
   .top-actions {
@@ -876,7 +891,7 @@ button:disabled {
     position: sticky;
     bottom: var(--keyboard-offset);
     z-index: 3;
-    background: #ffffffef;
+    background: var(--bg-1);
     backdrop-filter: blur(8px);
     padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   }
@@ -900,6 +915,14 @@ button:disabled {
   body.ipad-multitask .feed {
     padding-bottom: 20px;
   }
+
+  .mobile-bottom-tabs {
+    display: block;
+  }
+
+  .app-shell {
+    margin-bottom: 76px;
+  }
 }
 
 /* iOS/iPadOS: keep text inputs >=16px to avoid viewport zoom on focus */
@@ -914,4 +937,260 @@ button:disabled {
   .modal-card textarea {
     font-size: 16px;
   }
+}
+
+/* Bottom Navigation Tabs (Mobile) - Telegram style */
+.mobile-bottom-tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: none;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line);
+  z-index: 20;
+  padding-top: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+
+.mobile-tabs-container {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  gap: 0;
+}
+
+.mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  cursor: pointer;
+  text-decoration: none;
+  color: var(--text-soft);
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  transition: color 0.3s ease;
+  position: relative;
+  border-radius: 12px;
+}
+
+.mobile-tab:hover {
+  color: var(--text-main);
+}
+
+.mobile-tab.active {
+  color: var(--accent);
+}
+
+.mobile-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.mobile-tab-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.mobile-tab-label {
+  font-size: 12px;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-1);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  transition: all 0.3s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-2);
+}
+
+@media (max-width: 900px) {
+  .mobile-bottom-tabs {
+    display: block;
+  }
+
+  .feed {
+    padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .app-shell {
+    margin-bottom: 76px;
+  }
+
+  .mobile-only {
+    display: none !important;
+  }
+
+  .mobile-sidebar-btn {
+    display: none !important;
+  }
+
+  .top-actions {
+    display: none;
+  }
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .ghost-btn {
+  background: rgba(15, 122, 238, 0.2);
+  color: #5eb3ff;
+}
+
+[data-theme="dark"] .danger-btn {
+  background: rgba(214, 63, 87, 0.2);
+  color: #ff6b7a;
+}
+
+[data-theme="dark"] .chat-item {
+  background: #252d42;
+  border-color: transparent;
+}
+
+[data-theme="dark"] .chat-item:hover {
+  border-color: rgba(15, 122, 238, 0.3);
+}
+
+[data-theme="dark"] .chat-item.active {
+  background: rgba(15, 122, 238, 0.15);
+  border-color: rgba(15, 122, 238, 0.4);
+}
+
+[data-theme="dark"] .post,
+[data-theme="dark"] .empty,
+[data-theme="dark"] .empty-main,
+[data-theme="dark"] .card {
+  background: #252d42;
+  border-color: #3a4354;
+}
+
+[data-theme="dark"] .user-search-item {
+  background: #252d42;
+  border-color: #3a4354;
+}
+
+[data-theme="dark"] .post-attachment {
+  background: #1a1f2b;
+  border-color: #3a4354;
+}
+
+[data-theme="dark"] .composer-file,
+[data-theme="dark"] .file-upload {
+  background: #1a1f2b;
+  border-color: #3a4354;
+  color: var(--text-soft);
+}
+
+[data-theme="dark"] .composer-file-trigger,
+[data-theme="dark"] .file-upload-trigger {
+  background: linear-gradient(135deg, var(--accent), #159ce5 50%, var(--accent-2));
+}
+
+[data-theme="dark"] .modal-card {
+  background: #1a1f2b;
+  border-color: #3a4354;
+}
+
+[data-theme="dark"] .modal-card input,
+[data-theme="dark"] .modal-card textarea {
+  background: #252d42;
+  border-color: #3a4354;
+  color: var(--text-main);
+}
+
+[data-theme="dark"] .sidebar,
+[data-theme="dark"] .main-area,
+[data-theme="dark"] .right-panel {
+  background: #1a1f2b;
+  border-color: #3a4354;
+}
+
+[data-theme="dark"] ::placeholder {
+  color: #707080;
+}
+
+[data-theme="dark"] .topbar {
+  border-bottom-color: #3a4354;
+}
+
+[data-theme="dark"] .composer {
+  background: rgba(26, 31, 43, 0.95);
+  border-top-color: #3a4354;
+}
+
+[data-theme="dark"] .search input,
+[data-theme="dark"] .composer input,
+[data-theme="dark"] .create-channel input,
+[data-theme="dark"] .add-contact-form input,
+[data-theme="dark"] .profile-form input,
+[data-theme="dark"] .profile-form textarea,
+[data-theme="dark"] .stack-form input {
+  background: #252d42;
+  border-color: #3a4354;
+  color: var(--text-main);
+}
+
+[data-theme="dark"] .search input:focus,
+[data-theme="dark"] .composer input:focus,
+[data-theme="dark"] .create-channel input:focus,
+[data-theme="dark"] .add-contact-form input:focus,
+[data-theme="dark"] .profile-form input:focus,
+[data-theme="dark"] .profile-form textarea:focus,
+[data-theme="dark"] .stack-form input:focus {
+  border-color: #5eb3ff;
+  box-shadow: 0 0 0 4px rgba(94, 179, 255, 0.12);
+}
+
+[data-theme="dark"] .post-attachment-file a {
+  color: #5eb3ff;
+}
+
+[data-theme="dark"] .post-attachment-download {
+  color: #5eb3ff;
+}
+
+[data-theme="dark"] .mobile-bottom-tabs {
+  background: #252d42;
+  border-top-color: #3a4354;
+}
+
+[data-theme="dark"] .mobile-tab {
+  color: #909aaa;
+}
+
+[data-theme="dark"] .mobile-tab:hover {
+  color: #c8d0e0;
+}
+
+[data-theme="dark"] .mobile-tab.active {
+  color: #5eb3ff;
 }

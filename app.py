@@ -927,7 +927,7 @@ def get_state() -> Any:
     channels = [_channel_payload(row, user_id) for row in channels_rows]
     contacts_rows = _db().execute(
         """
-        SELECT c.contact_user_id, c.channel_id, u.name, u.username, u.avatar_url
+        SELECT c.contact_user_id, c.channel_id, u.id, u.name, u.username, u.avatar_url
         FROM contacts c
         JOIN users u ON u.id = c.contact_user_id
         WHERE c.user_id = ? AND COALESCE(u.is_banned, 0) = 0
