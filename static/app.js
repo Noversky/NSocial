@@ -781,7 +781,7 @@ async function openCallModal(mode) {
     showToast("Выберите канал для звонка", "error");
     return;
   }
-  if (!channel.is_subscribed || channel.can_call === false) {
+  if (!channel.is_subscribed || !channel.can_call) {
     showToast("Подпишитесь на канал перед звонком", "error");
     return;
   }
@@ -1026,8 +1026,8 @@ function renderChannelActions(channel) {
 
   editChannelBtn.disabled = !channel.can_edit_channel;
   deleteChannelBtn.disabled = !channel.can_delete_channel;
-  audioCallBtn.disabled = !channel.is_subscribed;
-  videoCallBtn.disabled = !channel.is_subscribed;
+  audioCallBtn.disabled = !channel.is_subscribed || !channel.can_call;
+  videoCallBtn.disabled = !channel.is_subscribed || !channel.can_call;
 }
 
 function renderMain() {

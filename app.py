@@ -784,6 +784,7 @@ def _channel_payload(channel: sqlite3.Row, user_id: int) -> dict[str, Any]:
         "can_edit_channel": role == "admin",
         "can_delete_channel": role == "admin",
         "can_post": role in {"admin", "subscriber"},
+        "can_call": role in {"admin", "subscriber"},
         "posts": posts,
     }
 
